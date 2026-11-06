@@ -1895,4 +1895,5 @@ tr.is-late td { background:var(--red-soft); }
 .owner-admin-list li>div { display:grid; gap:2px; }
 .switch { display:inline-flex; align-items:center; gap:8px; min-block-size:44px; cursor:pointer; font-size:var(--fs-s); }
 .switch input { inline-size:22px; block-size:22px; accent-color:var(--navy); }
+.owner-admin-report { min-inline-size:0; }
 .owner-admin-report .row { justify-content:space-between; }

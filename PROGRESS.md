@@ -1,17 +1,16 @@
 # PROGRESS — Manage by HEDAX
 
-## فاز ۳ طرح نقش‌محور — نوشته شد، منتظر CI — 2026-11-06
+## فاز ۳ طرح نقش‌محور — PR باز شد، منتظر GitHub Actions — 2026-11-06
 
-شاخهٔ `feature/phase3-people` از `feature/phase2-parts` (`a1cd8c6`، PR #53) ساخته شد. چهار بخش نوشته شده است: تذکر بین کارتابل‌ها، اجرت تعمیرکار و کارکرد ماه، دوره‌های مسئول پرونده و انتقال، مرز مالک و مدیر سیستم. migration افزایشی `0018_people_reminders_wages` چهار جدول تازه دارد و روی PostgreSQL 16 از صفر، با down و اجرای دوباره، آزموده شد. [راهنمای فارسی](docs/PHASE3_PEOPLE_FA.md)، [پایگاه داده](docs/DATABASE.md)، [گزارش آزمون](docs/TEST_REPORT.md).
+شاخهٔ `feature/phase3-people` از `feature/phase2-parts` (`a1cd8c6`، PR #53) ساخته شد و به [PR #54](https://github.com/ali-hedax/manage-dealership-platform/pull/54) به‌سمت `main` باز شد. چهار بخش: تذکر بین کارتابل‌ها، اجرت تعمیرکار و کارکرد ماه، دوره‌های مسئول پرونده و انتقال، مرز مالک و مدیر سیستم. migration افزایشی `0018_people_reminders_wages` چهار جدول تازه دارد. [راهنمای فارسی](docs/PHASE3_PEOPLE_FA.md)، [پایگاه داده](docs/DATABASE.md)، [گزارش آزمون](docs/TEST_REPORT.md).
 
-محیط ساخت به بستهٔ npm دسترسی نداشت. build، lint، typecheck، Jest و Playwright هنوز اجرا نشده‌اند و نتیجه‌شان با CI روی PR معلوم می‌شود. عکس‌های `docs/screenshots/phase3/` هم هنوز ساخته نشده‌اند.
+نصب کامل (corepack/pnpm)، build، lint، typecheck و کل آزمون‌ها این‌بار محلی اجرا شدند: shared ۲۱/۲۱، API ۱۸۴/۱۸۴ (شامل ۹ آزمون روی PostgreSQL 17 واقعی محلی، نه فقط PGlite)، Playwright اصلی ۴۲ موفق/۴ اختیاری‌ردشده، Playwright روزانه/مالک ۴/۴. کنترل مستندات موفق (۵۱ فایل، ۱۶۴ مسیر API). عکس‌های `docs/screenshots/phase3/` ساخته و با نگاه بررسی شدند (فقط دادهٔ ساختگی، بدون سرریز افقی در ۳۹۰پیکسل).
 
-**قدم دقیق بعد:**
-۱. PR از `feature/phase3-people` به `main` باز شود. بعد از ثبت نتیجهٔ هر شش بررسی، اگر بررسی‌ای قرمز شد، خطای همان بررسی رفع شود.
-۲. عکس‌ها با این دستور ساخته شوند: `SCREENSHOTS=1 pnpm --filter @manage/web exec playwright test phase3-screenshots --project=desktop`
-۳. تعداد آزمون‌ها در [گزارش آزمون](docs/TEST_REPORT.md) ثبت شود.
+اولین اجرای مجموعهٔ روزانه یک باگ واقعی پیدا کرد: در ۳۹۰پیکسل، با پر شدن جدول «اقدامات مدیر سیستم»، کل صفحه سرریز افقی می‌گرفت (آیتم grid بدون `min-inline-size:0`، همان الگوی شناخته‌شدهٔ این کدبیس). با یک قاعدهٔ CSS در [apps/web/app/globals.css](apps/web/app/globals.css) (`.owner-admin-report { min-inline-size:0; }`) رفع و با rebuild دوباره آزموده شد؛ رگرسیونی ایجاد نشد.
 
-ترتیب ادغام: اول #53، بعد فاز ۳. ادغام و انتشار با مالک است.
+**قدم دقیق بعد:** صبر برای هر شش بررسی GitHub Actions روی PR #54؛ شمارهٔ هر بررسی در [گزارش آزمون](docs/TEST_REPORT.md) ثبت شود. اگر بررسی‌ای قرمز شد، علتش پیدا و رفع و دوباره push شود (بدون force-push). ادغام نشود — طبق AGENTS.md ادغام با تأیید مالک است.
+
+ترتیب ادغام: اول #53، بعد فاز ۳.
 
 ## فاز ۲ طرح نقش‌محور — 2026-11-06
 
