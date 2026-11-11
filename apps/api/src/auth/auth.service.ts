@@ -1,7 +1,7 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
-import { isPinEligible, MODULES, permissionsFor, PIN_DENIED_PERMISSIONS, type LoginInput, type Me, type Role, type TechnicianLoginInput } from '@manage/shared';
+import { isPinEligible, MODULES, normalizeRoles, permissionsFor, PIN_DENIED_PERMISSIONS, type LoginInput, type Me, type TechnicianLoginInput } from '@manage/shared';
 import { AuditService } from '../audit/audit.service';
 import { APP_CONFIG, type AppConfig } from '../config';
 import { AppError } from '../common/errors';
@@ -292,7 +292,8 @@ export class AuthService {
     tenant: typeof tenants.$inferSelect,
     sessionId: string,
   ): AuthUser {
-    const roles = user.roles as Role[];
+    // Stored legacy role codes (before migration 0020) resolve to their successors.
+    const roles = normalizeRoles(user.roles);
     return {
       id: user.id,
       tenantId: tenant.id,

@@ -33,16 +33,14 @@ import type {
 } from './enums';
 
 export const ROLE_LABELS: Record<Role, string> = {
-  accident_coordinator: 'مسئول تصادفات',
-  technician: 'تعمیرکار',
-  accident_expert: 'مسئول تصادفات (سمت قدیمی کارشناس)',
-  accident_supervisor: 'مسئول تصادفات (سمت قدیمی سرپرست)',
+  accident_expert: 'کارشناس تصادفات',
+  parts_clerk: 'مسئول قطعات',
+  technician: 'تکنسین جایگاه',
   service_manager: 'مدیر خدمات',
-  parts_clerk: 'قطعات',
-  cashier: 'مالی و صندوق',
-  qc_inspector: 'کنترل کیفیت',
   system_admin: 'مدیر سیستم',
 };
+/** The owner is a flag on the account, not a role code. */
+export const OWNER_LABEL = 'مالک';
 
 export const COVERAGE_LABELS: Record<CoverageType, string> = {
   golden_card: 'کارت طلایی / امداد خودرو',
@@ -176,8 +174,8 @@ export const FINANCE_GATE_LABELS: Record<FinanceGateReason, string> = {
   exception: 'خرید مجاز با استثنای تأییدشده',
   shares_unknown: 'هشدار: سهم مشتری مشخص نشده؛ خرید متوقف نمی‌شود',
   no_estimate: 'هشدار: کارشناسی نهایی نشده؛ خرید متوقف نمی‌شود',
-  advance_missing: 'هشدار: پیش‌پرداخت ثبت نشده؛ تصمیم با مسئول تصادفات است',
-  re_approval_required: 'هشدار: هزینه افزایش یافته؛ پیش‌پرداخت را با مسئول تصادفات بررسی کنید',
+  advance_missing: 'هشدار: پیش‌پرداخت ثبت نشده؛ تصمیم با کارشناس تصادفات است',
+  re_approval_required: 'هشدار: هزینه افزایش یافته؛ پیش‌پرداخت را با کارشناس تصادفات بررسی کنید',
 };
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {

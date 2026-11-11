@@ -592,7 +592,7 @@ export class ReportsService {
           description: `${r.dept}${r.t.title ? ` — ${r.t.title}` : ''}${r.t.technicianName ? ` (${r.t.technicianName})` : ''}`,
           status: TASK_STATUS_LABELS[s],
           stoppedBy: r.blockReason ? `${BLOCKER_REASON_LABELS[r.blockReason as BlockerReason]}${blockedDays !== null ? ` — ${blockedDays} روز` : ''}` : null,
-          nextAction: s === 'pending' ? 'شروع کار' : s === 'in_progress' ? 'ثبت اتمام' : s === 'blocked' ? 'پیگیری رفع مانع' : 'تأیید تحویل مسئول تصادفات',
+          nextAction: s === 'pending' ? 'شروع کار' : s === 'in_progress' ? 'ثبت اتمام' : s === 'blocked' ? 'پیگیری رفع مانع' : 'تأیید تحویل کارشناس تصادفات',
         },
         now,
         r.t.plannedEndAt ? { at: r.t.plannedEndAt, label: 'پایان برنامه‌ای' } : undefined,

@@ -16,8 +16,6 @@ function defaultView(roles: Role[], views: ReportView[]): ReportView | null {
     ['service_manager', 'manager'],
     ['parts_clerk', 'parts'],
     ['accident_expert', 'accident'],
-    ['accident_supervisor', 'accident'],
-    ['qc_inspector', 'workshop'],
   ];
   return order.find(([r, v]) => roles.includes(r) && views.includes(v))?.[1] ?? views[0] ?? null;
 }
@@ -33,9 +31,8 @@ export class ReportsController {
   @RequirePermissions('case.read')
   views(@CurrentActor() actor: Actor) {
     const views = allowedViews(actor.user.permissions);
-    // An accident expert starts with their own cases; supervisors and managers with all.
-    const mine = actor.user.roles.includes('accident_expert') && !actor.user.roles.some((r) => r === 'accident_supervisor' || r === 'service_manager');
-    return { views, defaultView: defaultView(actor.user.roles, views), defaultResponsible: mine ? 'me' : null };
+    // Every accident expert sees all accident vehicles; their own cases are marked, not filtered (spec section 3).
+    return { views, defaultView: defaultView(actor.user.roles, views), defaultResponsible: null };
   }
 
   @Get()

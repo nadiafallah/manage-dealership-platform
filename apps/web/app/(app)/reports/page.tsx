@@ -50,7 +50,7 @@ function ReportsPage() {
       plate: i.plate,
       source: 'manager_report',
       body: `پیگیری: ${i.nextAction}`.slice(0, 300),
-      ...(partsWork ? { role: 'parts_clerk' as const } : i.responsible ? { userIds: [i.responsible.id] } : { role: 'accident_coordinator' as const }),
+      ...(partsWork ? { role: 'parts_clerk' as const } : i.responsible ? { userIds: [i.responsible.id] } : { role: 'accident_expert' as const }),
     });
   };
 
@@ -282,7 +282,7 @@ function ReportsPage() {
             <div className="kpi-reminders no-print" role="group" aria-label="تذکر دربارهٔ یافته‌ها">
               <span className="xs muted">تذکر دربارهٔ یافته‌ها:</span>
               {data.kpis.filter((k) => k.value > 0).map((k) => (
-                <button key={k.key} type="button" className="btn btn-sm" onClick={() => setRemind({ role: /part|قطعه/.test(k.key + k.label) ? 'parts_clerk' : 'accident_coordinator', source: 'manager_report', body: `${k.label}: ${faNum(k.value)} ${k.unit}؛ لطفاً امروز پیگیری کن.`.slice(0, 300) })}>
+                <button key={k.key} type="button" className="btn btn-sm" onClick={() => setRemind({ role: /part|قطعه/.test(k.key + k.label) ? 'parts_clerk' : 'accident_expert', source: 'manager_report', body: `${k.label}: ${faNum(k.value)} ${k.unit}؛ لطفاً امروز پیگیری کن.`.slice(0, 300) })}>
                   تذکر · {k.label}
                 </button>
               ))}

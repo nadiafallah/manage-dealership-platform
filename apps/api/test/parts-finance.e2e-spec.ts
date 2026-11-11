@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { strToU8, zipSync } from 'fflate';
 import { MAX_ENTRY_BYTES, writeSheet } from '../src/parts/xlsx';
 import { IMPORT_COLUMNS } from '../src/parts/parts.service';
-import { Client, createHarness, daysAgo, daysAhead, type Harness } from './harness';
+import { Client, LEGACY_QC_PERMISSIONS, createHarness, LEGACY_CASHIER_PERMISSIONS, daysAgo, daysAhead, type Harness } from './harness';
 
 // Issues #9 (parts) and #10 (financial gate): acceptance scenarios 2, 3, 4, 8.
 
@@ -87,9 +87,10 @@ beforeAll(async () => {
   h = await createHarness();
   // This fixture exercises the legacy financial decision path with an explicit grant.
   await h.db.db.update(users).set({permissionOverrides:{allow:['finance.approve','finance.close','finance.propose'],deny:[]}}).where(eq(users.username,'manager'));
-  [expert, supervisor, manager, parts, cashier] = await Promise.all(
-    ['expert', 'supervisor', 'manager', 'parts', 'cashier'].map((u) => h.login(u)),
-  );
+  [expert, supervisor, manager, parts, cashier] = await Promise.all([
+    ...['expert', 'supervisor', 'manager', 'parts'].map((u) => h.login(u)),
+    h.loginAs('payments', [], LEGACY_CASHIER_PERMISSIONS),
+  ]);
   depts = (await supervisor.get('/departments')).body;
 });
 
@@ -364,7 +365,7 @@ describe('acceptance 4 and 8: personal case, advance payment and the purchase ga
         expect.objectContaining({ kind: 'parts_amount', level: 2, totalRial: 11_000_000, thresholdRial: 5_000_000 }),
       ]),
     );
-    const qc = await h.login('qc');
+    const qc = await h.loginAs('narrow', [], LEGACY_QC_PERMISSIONS);
     expect((await qc.post(`/cases/${c.id}/alerts/respond`, { kind: 'advance', level: 1, response: 'received' })).status).toBe(403);
     const left = await expert.post(`/cases/${c.id}/alerts/respond`, { kind: 'advance', level: 1, response: 'not_received', note: 'مشتری فردا می‌آورد' });
     expect(left.body).toEqual([expect.objectContaining({ kind: 'parts_amount', level: 2 })]);

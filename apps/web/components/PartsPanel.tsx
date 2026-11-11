@@ -480,7 +480,7 @@ export function PartsPanel({ kase, onChange }: { kase: CaseDetail; onChange: () 
                     )}
                   </label>
                 )}
-                {source==='external'&&<p className="callout callout-amber small">پس از عدم تأمین انبار، شرکت و امداد، پیشنهاد قیمت بازار را ثبت کنید. خرید بیرون فقط با تأیید ثبت‌شده همان قیمت، تعداد و فروشنده توسط مسئول تصادفات انجام می‌شود.</p>}
+                {source==='external'&&<p className="callout callout-amber small">پس از عدم تأمین انبار، شرکت و امداد، پیشنهاد قیمت بازار را ثبت کنید. خرید بیرون فقط با تأیید ثبت‌شده همان قیمت، تعداد و فروشنده توسط کارشناس تصادفات انجام می‌شود.</p>}
                 <JalaliInput label="زمان پیش‌بینی رسیدن" value={eta} onChange={setEta} withTime />
                 {finance && !finance.gate.open && source !== 'customer' && (
                   <div className="callout callout-red small">{finance.gate.message}</div>

@@ -12,7 +12,7 @@ import {
   type Task,
   type TimelineEvent,
 } from '@manage/shared';
-import { Client, createHarness, daysAgo, type Harness } from './harness';
+import { Client, LEGACY_QC_PERMISSIONS, createHarness, LEGACY_CASHIER_PERMISSIONS, daysAgo, type Harness } from './harness';
 
 // Issue #12: QC with corrective work, technical and financial close as two
 // independent gates, settlement payment and handover (acceptance scenario 9).
@@ -133,9 +133,11 @@ beforeAll(async () => {
   h = await createHarness();
   // This fixture exercises the legacy financial decision path with an explicit grant.
   await h.db.db.update(users).set({permissionOverrides:{allow:['finance.approve','finance.close','finance.propose'],deny:[]}}).where(eq(users.username,'manager'));
-  [expert, supervisor, manager, parts, cashier, qc] = await Promise.all(
-    ['expert', 'supervisor', 'manager', 'parts', 'cashier', 'qc'].map((u) => h.login(u)),
-  );
+  [expert, supervisor, manager, parts, cashier, qc] = await Promise.all([
+    ...['expert', 'supervisor', 'manager', 'parts'].map((u) => h.login(u)),
+    h.loginAs('payments', [], LEGACY_CASHIER_PERMISSIONS),
+    h.loginAs('narrow', [], LEGACY_QC_PERMISSIONS),
+  ]);
   depts = (await supervisor.get('/departments')).body;
 });
 

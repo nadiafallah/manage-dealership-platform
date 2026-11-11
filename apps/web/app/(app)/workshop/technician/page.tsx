@@ -31,7 +31,7 @@ export default function TechnicianPage(){
   const confirmed=useRef(new Set<string>());
   // The first time an amount is shown it counts as seen; a later change shows "تغییر کرد" until confirmed.
   useEffect(()=>{for(const t of data??[]){const w=t.wage;if(w&&!w.seen&&!confirmed.current.has(`${t.id}:${w.version}`)){confirmed.current.add(`${t.id}:${w.version}`);void api(`/workshop/my-tasks/${t.id}/wage-seen`,{body:{expectedVersion:w.version}}).catch(()=>{});}}},[data]);
-  async function act(t:WorkshopTask){if(busy)return;setBusy(true);setFailure('');setMessage('');try{await api(`/workshop/my-tasks/${t.id}/actions`,{body:{action:t.status==='pending'?'start':'complete',expectedVersion:t.version}});setMessage(t.status==='pending'?'شروع کار ثبت شد.':'پایان کار ثبت شد؛ منتظر تأیید مسئول تصادفات.');}catch(e){setFailure(errorMessage(e));}finally{await mutate();setBusy(false);}}
+  async function act(t:WorkshopTask){if(busy)return;setBusy(true);setFailure('');setMessage('');try{await api(`/workshop/my-tasks/${t.id}/actions`,{body:{action:t.status==='pending'?'start':'complete',expectedVersion:t.version}});setMessage(t.status==='pending'?'شروع کار ثبت شد.':'پایان کار ثبت شد؛ منتظر تأیید کارشناس تصادفات.');}catch(e){setFailure(errorMessage(e));}finally{await mutate();setBusy(false);}}
   async function pickup(taskId: string, partId: string, expectedVersion: number) {
     if (busy) return;
     setBusy(true);setFailure('');setMessage('');
@@ -42,7 +42,7 @@ export default function TechnicianPage(){
     finally { await mutate(); setBusy(false); }
   }
   async function wageSeen(t:WorkshopTask){if(!t.wage||busy)return;setBusy(true);setFailure('');try{await api(`/workshop/my-tasks/${t.id}/wage-seen`,{body:{expectedVersion:t.wage.version}});}catch(e){setFailure(errorMessage(e));}finally{await mutate();setBusy(false);}}
-  async function report(problem:TechnicianProblem){if(!problemFor||busy)return;setBusy(true);setFailure('');setMessage('');try{await api(`/workshop/my-tasks/${problemFor.id}/problem`,{body:{problem}});setMessage(`«${TECHNICIAN_PROBLEM_LABELS[problem]}» برای مسئول تصادفات این خودرو فرستاده شد.`);setProblemFor(null);}catch(e){setFailure(errorMessage(e));}finally{setBusy(false);}}
+  async function report(problem:TechnicianProblem){if(!problemFor||busy)return;setBusy(true);setFailure('');setMessage('');try{await api(`/workshop/my-tasks/${problemFor.id}/problem`,{body:{problem}});setMessage(`«${TECHNICIAN_PROBLEM_LABELS[problem]}» برای کارشناس تصادفات این خودرو فرستاده شد.`);setProblemFor(null);}catch(e){setFailure(errorMessage(e));}finally{setBusy(false);}}
   if(!can('task.execute'))return <p className="callout">کارتابل تعمیرکار برای شما فعال نیست.</p>;
   const open=(data??[]).filter(t=>t.status!=='approved');
   const first=open.find(t=>t.status!=='done');
@@ -66,8 +66,8 @@ export default function TechnicianPage(){
       {t.status!=='done'&&t.partsReady?.pickup?.map(p=><button key={p.id} className="btn" disabled={busy} onClick={()=>void pickup(t.id,p.id,p.version)}>گرفتم · {p.description}</button>)}
       {t.status!=='done'&&!!t.partsWaiting&&<p className="muted small" style={{margin:0}}>{toPersianDigits(String(t.partsWaiting))} قطعهٔ دیگر هنوز نرسیده است.</p>}
       {t.wage&&<div className="technician-wage"><span className="muted">اجرت شما</span><strong>{rial(t.wage.amountRial)}</strong>{t.wage.changed&&<><span className="chip chip-amber">تغییر کرد</span><span className="xs muted">قبلاً {rial(t.wage.previousRial??0)}</span><button type="button" className="btn btn-sm" disabled={busy} onClick={()=>void wageSeen(t)}>دیدم</button></>}</div>}
-      {['pending','in_progress'].includes(t.status)?<button className={`btn technician-action ${t.status==='pending'?'btn-primary':'technician-finish'}`} disabled={busy||(t.status==='pending'&&!t.canStart)} onClick={()=>void act(t)}>{busy?'در حال ثبت…':t.status==='pending'?'شروع کار':'پایان کار'}</button>:<p className="callout">{t.status==='done'?'پایان ثبت شده؛ منتظر تأیید مسئول تصادفات.':'کار متوقف است؛ با مسئول تصادفات هماهنگ کنید.'}</p>}
-      {waiting&&<p>منتظر تأیید تحویل کار قبلی توسط مسئول تصادفات.</p>}
+      {['pending','in_progress'].includes(t.status)?<button className={`btn technician-action ${t.status==='pending'?'btn-primary':'technician-finish'}`} disabled={busy||(t.status==='pending'&&!t.canStart)} onClick={()=>void act(t)}>{busy?'در حال ثبت…':t.status==='pending'?'شروع کار':'پایان کار'}</button>:<p className="callout">{t.status==='done'?'پایان ثبت شده؛ منتظر تأیید کارشناس تصادفات.':'کار متوقف است؛ با کارشناس تصادفات هماهنگ کنید.'}</p>}
+      {waiting&&<p>منتظر تأیید تحویل کار قبلی توسط کارشناس تصادفات.</p>}
       {t.status!=='done'&&<button type="button" className="btn technician-problem" disabled={busy} onClick={()=>setProblemFor(t)} aria-label={`مشکل دارم؛ ${t.title||t.departmentName}`}>مشکل دارم</button>}
     </article>;})}
     {data&&!open.length&&<div className="technician-job"><h2>کار بازی ندارید</h2><p>وقتی کاری به شما ارجاع شود، همین‌جا نمایش داده می‌شود.</p></div>}
@@ -76,7 +76,7 @@ export default function TechnicianPage(){
       <Link className="technician-bar-link" href="/reminders">تذکرهای من</Link>
     </nav>
     <Dialog open={!!problemFor} title="مشکل دارم" onClose={()=>!busy&&setProblemFor(null)} footer={<button type="button" className="btn" disabled={busy} onClick={()=>setProblemFor(null)}>انصراف</button>}>
-      <p className="small">پیام برای مسئول تصادفات همین خودرو فرستاده می‌شود{problemFor?.plate?<> (پلاک <bdi>{toPersianDigits(problemFor.plate)}</bdi>)</>:''}.</p>
+      <p className="small">پیام برای کارشناس تصادفات همین خودرو فرستاده می‌شود{problemFor?.plate?<> (پلاک <bdi>{toPersianDigits(problemFor.plate)}</bdi>)</>:''}.</p>
       <div className="technician-problems">{TECHNICIAN_PROBLEMS.map(p=><button key={p} type="button" className="btn" disabled={busy} onClick={()=>void report(p)}>{TECHNICIAN_PROBLEM_LABELS[p]}</button>)}</div>
     </Dialog>
   </div>;

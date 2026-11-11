@@ -61,7 +61,7 @@ test('reminder, technician problem, wage, monthly work and case transfer', async
   await expect(page.getByRole('status').filter({ hasText: 'قطعه ندارم' })).toBeVisible();
   await job.getByRole('button', { name: 'شروع کار', exact: true }).click();
   await job.getByRole('button', { name: 'پایان کار', exact: true }).click();
-  await expect(job).toContainText('پایان ثبت شده؛ منتظر تأیید مسئول تصادفات.');
+  await expect(job).toContainText('پایان ثبت شده؛ منتظر تأیید کارشناس تصادفات.');
   expect(await page.evaluate(noHorizontalScroll)).toBe(true);
   await page.screenshot({ path: info.outputPath('technician-phase3-mobile.png'), fullPage: true });
 

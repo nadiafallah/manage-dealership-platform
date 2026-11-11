@@ -124,3 +124,14 @@ Verified locally on PostgreSQL 16: all migrations `0000`→`0018` on an empty da
 - `trusted_devices`: one row per (device cookie, account); the cookie `manage_device` holds a random token, only its SHA-256 is stored. On a trusted device the PIN alone signs in; revoked rows (`revoked_at`) need the device password again.
 
 Additive only. Rollback: the previous application ignores the table and column; `down/0019_staff_pin_devices.down.sql` is for disposable databases only.
+
+## 0020 — six roles (spec section 3)
+
+Five role codes plus the owner flag: `accident_expert`, `parts_clerk`, `technician`, `service_manager`, `system_admin`; the owner stays `users.is_owner`.
+
+- `users.roles`: `accident_coordinator`, `accident_supervisor` and `qc_inspector` become `accident_expert` (duplicates removed); `cashier` is removed. An account left with no role and not the owner is kept but deactivated, and its open sessions are revoked. Credentials, PIN, Authenticator, personal allow/deny overrides, cases and audit are untouched.
+- `tenants.permission_templates` is reset to `{}` (the code defaults of the specification) and `permission_version` is bumped, so open access forms reload.
+- `reminders.target_role`: retired codes become `accident_expert` (`cashier` → null).
+- New table `role_migration_log` keeps the previous and new value of every row the migration changed (`entity` = user | tenant | reminder). The application never writes it.
+
+The application also maps any remaining legacy code when it reads roles (`normalizeRoles` in `packages/shared/src/enums.ts`), so a row written by an older image still resolves. Rollback: `down/0020_six_roles.down.sql` restores roles, active flags, templates and reminder roles exactly from the log, then drops it; revoked sessions stay revoked. Verified on PostgreSQL 16: 0000→0020 on an empty database, synthetic legacy rows mapped as described, down script restored every logged value.

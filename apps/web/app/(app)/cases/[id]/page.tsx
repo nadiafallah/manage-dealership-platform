@@ -308,7 +308,7 @@ export default function CaseDetailPage() {
       <ReminderComposer
         open={reminding}
         onClose={() => setReminding(false)}
-        defaults={{ caseId: kase.id, caseLabel: kase.caseNumber, plate: v.plate, userIds: kase.responsible ? [kase.responsible.id] : [], role: kase.responsible ? undefined : 'accident_coordinator' }}
+        defaults={{ caseId: kase.id, caseLabel: kase.caseNumber, plate: v.plate, userIds: kase.responsible ? [kase.responsible.id] : [], role: kase.responsible ? undefined : 'accident_expert' }}
       />
     </div>
   );

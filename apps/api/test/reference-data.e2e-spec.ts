@@ -3,14 +3,14 @@ import {referenceEntries,referenceImports,tenants,users,auditEvents} from '../sr
 import {writeSheet} from '../src/parts/xlsx';
 import {newId} from '../src/common/ids';
 import {hashPassword} from '../src/auth/password';
-import {Client,createHarness,TEST_PASSWORD,type Harness} from './harness';
+import { Client, LEGACY_QC_PERMISSIONS, createHarness, TEST_PASSWORD, type Harness } from './harness';
 
 let h:Harness,manager:Client,parts:Client,qc:Client;
 const file=(kind:'parts'|'customers',rows:string[][])=>({kind,fileName:'synthetic.xlsx',fileBase64:Buffer.from(writeSheet('داده آزمون',rows)).toString('base64')});
 const partPreview=(rows:string[][],who=manager)=>who.post('/reference-imports',{...file('parts',[['کد','نام','موجودی'],...rows]),sheetIndex:0,headerRow:1,mapping:{partNumber:0,description:1,quantity:2}});
 const customerFile=()=>file('customers',[['شاسی','نام','تلفن','مدل'],['TESTCHS001','مشتری آزمون اول','09000000001','خودرو آزمون'],['TESTCHS001','مشتری آزمون دوم','09000000002','خودرو آزمون']]);
 const customerPreview=(who=manager)=>who.post('/reference-imports',{...customerFile(),sheetIndex:0,headerRow:1,mapping:{chassis:0,fullName:1,phone:2,model:3}});
-beforeAll(async()=>{h=await createHarness();[manager,parts,qc]=await Promise.all(['admin','parts','qc'].map(u=>h.login(u)));});
+beforeAll(async()=>{h=await createHarness();[manager,parts,qc]=await Promise.all([h.login('admin'),h.login('parts'),h.loginAs('narrow',[],LEGACY_QC_PERMISSIONS)]);});
 afterAll(async()=>{await h?.close();});
 
 it('inspects sheets, validates mappings and preserves code leading zeroes',async()=>{

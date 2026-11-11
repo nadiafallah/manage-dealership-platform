@@ -8,7 +8,7 @@ import { loadConfig, type AppConfig } from '../src/config';
 import { DATABASE, type DatabaseHandle } from '../src/db/database';
 import { DEMO_TENANT_CODE, DemoSeedService } from '../src/demo/demo-seed.service';
 import { eq } from 'drizzle-orm';
-import type { Role } from '@manage/shared';
+import type { Permission, Role } from '@manage/shared';
 import { hashPassword } from '../src/auth/password';
 import { newId } from '../src/common/ids';
 import { tenants, users } from '../src/db/schema';
@@ -21,7 +21,7 @@ export interface Harness {
   seeder: DemoSeedService;
   login(username: string, tenantCode?: string): Promise<Client>;
   /** Adds a synthetic user to the demo dealership and logs in (e.g. a second manager). */
-  loginAs(username: string, roles: Role[]): Promise<Client>;
+  loginAs(username: string, roles: Role[], allow?: Permission[]): Promise<Client>;
   close(): Promise<void>;
 }
 
@@ -73,7 +73,7 @@ export async function createHarness(opts: { withCases?: boolean; config?:Partial
     db: app.get<DatabaseHandle>(DATABASE),
     seeder,
     login,
-    async loginAs(username: string, roles: Role[]) {
+    async loginAs(username: string, roles: Role[], allow: Permission[] = []) {
       const db = app.get<DatabaseHandle>(DATABASE).db;
       const [tenant] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.code, DEMO_TENANT_CODE));
       await db.insert(users).values({
@@ -83,6 +83,7 @@ export async function createHarness(opts: { withCases?: boolean; config?:Partial
         displayName: `کاربر آزمون ${username}`,
         passwordHash: await hashPassword(TEST_PASSWORD),
         roles,
+        permissionOverrides: { allow, deny: [] },
         isTest: true,
       });
       return login(username);
@@ -95,3 +96,11 @@ export async function createHarness(opts: { withCases?: boolean; config?:Partial
 
 export const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 export const daysAhead = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString();
+
+/**
+ * The permissions of the retired cashier role (before migration 0020), given as
+ * personal overrides to a role-less test account so payment tests keep their meaning.
+ */
+export const LEGACY_CASHIER_PERMISSIONS: Permission[] = ['case.read', 'customer.pii.read', 'finance.payment', 'finance.close', 'dashboard.read'];
+/** The permissions of the retired QC role, for tests that need a narrow read-mostly colleague. */
+export const LEGACY_QC_PERMISSIONS: Permission[] = ['case.read', 'blocker.report', 'qc.inspect', 'dashboard.read'];

@@ -187,12 +187,17 @@ test('parts clerk records the verified payer response to their own market quote'
   expect(quoted.status).toBe(201);
   const pending = quoted.body.find((q: { partId: string; status: string }) => q.partId === p.id && q.status === 'pending');
   expect(pending).toBeDefined();
-  const missingOfficial = await parts.post(`/workshop/quotes/${pending.id}/decision`, {
+  // Spec section 7: the accident expert records the payer's answer; the parts clerk cannot.
+  expect((await parts.post(`/workshop/quotes/${pending.id}/decision`, {
+    expectedVersion: pending.version, decision: 'approved', source: 'insurer',
+    officialRecorded: true, reference: 'TEST-APPROVAL', approver: 'کارشناس تست', note: 'آزمون',
+  })).status).toBe(403);
+  const missingOfficial = await coordinator.post(`/workshop/quotes/${pending.id}/decision`, {
     expectedVersion: pending.version, decision: 'approved', source: 'insurer',
     officialRecorded: false, reference: 'TEST-APPROVAL', approver: 'کارشناس تست', note: 'آزمون',
   });
   expect(missingOfficial.status).toBe(422);
-  const approved = await parts.post(`/workshop/quotes/${pending.id}/decision`, {
+  const approved = await coordinator.post(`/workshop/quotes/${pending.id}/decision`, {
     expectedVersion: pending.version, decision: 'approved', source: 'insurer',
     officialRecorded: true, reference: 'TEST-APPROVAL', approver: 'کارشناس تست', note: 'مجوز رسمی آزمون ثبت است',
   });

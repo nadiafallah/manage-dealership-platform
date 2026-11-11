@@ -405,7 +405,7 @@ export class PartsService {
       const payer=kase!.coverageType==='golden_card'?'golden_card':'insurer';
       if(quote&&quote.source!==payer)throw badRequest('MARKET_APPROVAL_REQUIRED','پوشش پرونده تغییر کرده است؛ تأیید پرداخت‌کننده فعلی لازم است');
       if(!quote || quote.status!=='approved' || quote.unitPriceRial!==unitPrice || quote.quantity!==p.quantity || quote.supplier!==(input.supplier??'') || quote.validUntil<new Date()) {
-        throw badRequest(aboveApproved?'PRICE_ABOVE_APPROVED':'MARKET_APPROVAL_REQUIRED','قیمت بالاتر از مبلغ تأییدشدهٔ کارت طلایی یا بیمه است؛ مسئول تصادفات باید تأیید پرداخت‌کننده را برای همین مبلغ، تعداد و فروشنده ثبت کند');
+        throw badRequest(aboveApproved?'PRICE_ABOVE_APPROVED':'MARKET_APPROVAL_REQUIRED','قیمت بالاتر از مبلغ تأییدشدهٔ کارت طلایی یا بیمه است؛ کارشناس تصادفات باید تأیید پرداخت‌کننده را برای همین مبلغ، تعداد و فروشنده ثبت کند');
       }
       if(quote.decidedAt && at<quote.decidedAt)throw badRequest('ORDER_BEFORE_APPROVAL','زمان خرید نمی‌تواند پیش از تأیید قیمت باشد');
     }

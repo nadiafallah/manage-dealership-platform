@@ -228,14 +228,14 @@ function TechnicianLoginForm({ busy, setBusy }: LoginSubmission) {
       <button className="btn btn-primary" type="submit" disabled={busy}>
         {busy ? 'در حال ورود…' : 'ورود به کارتابل'}
       </button>
-      <p className="login-help muted small">رمز را فراموش کرده‌اید؟ از مالک یا مدیر سیستم بخواهید آن را بازنشانی کند.</p>
+      <p className="login-help muted small">رمز را فراموش کرده‌اید؟ از مدیر سیستم بخواهید آن را بازنشانی کند.</p>
     </form>
   );
 }
 
 const loginModes = [
   { id: 'technician', label: 'ورود کارکنان' },
-  { id: 'staff', label: 'ورود مالک و مدیر سیستم' },
+  { id: 'staff', label: 'ورود مدیر سیستم' },
 ] as const;
 
 function LoginPanels() {

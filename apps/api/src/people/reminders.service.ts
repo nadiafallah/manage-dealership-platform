@@ -14,6 +14,7 @@ import {
   type ReminderSource,
   type ReminderStatus,
   type ReminderUrgency,
+  normalizeRoles,
   type Role,
   type SentReminder,
   type TechnicianProblem,
@@ -28,7 +29,7 @@ import { cases, departments, notifications, reminderRecipients, reminders, tasks
 import { calendarAt } from '../workshop/work-calendar';
 
 /** Roles that receive a technician's "I have a problem" when the case has no responsible. */
-const COORDINATOR_ROLES: Role[] = ['accident_coordinator', 'accident_expert', 'accident_supervisor'];
+const COORDINATOR_ROLES: Role[] = ['accident_expert'];
 const sender = alias(users, 'reminder_sender');
 const iso = (d: Date | null) => d?.toISOString() ?? null;
 
@@ -113,9 +114,8 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       if (!staff.some((u) => u.id === id)) throw badRequest('INVALID_RECIPIENT', 'گیرنده در این نمایندگی پیدا نشد یا فعال نیست');
       recipients.add(id);
     }
-    // "مسئول تصادفات" also reaches the legacy expert and supervisor roles (the same unified desk).
-    const roles: string[] = input.role === 'accident_coordinator' ? COORDINATOR_ROLES : input.role ? [input.role] : [];
-    for (const u of staff) if (u.roles.some((r) => roles.includes(r))) recipients.add(u.id);
+    const roles: string[] = input.role ? [input.role] : [];
+    for (const u of staff) if (normalizeRoles(u.roles).some((r) => roles.includes(r))) recipients.add(u.id);
     recipients.delete(actor.user.id);
     return this.create(actor, {
       recipients: [...recipients],
@@ -158,8 +158,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       .from(workshopStations).where(and(eq(workshopStations.id, selected.stationId), eq(workshopStations.tenantId, tenantId))) : [];
     const recipients = new Set([selected.assignedUserId, station?.responsibleUserId, part.c.responsibleUserId]
       .filter((id): id is string => !!id));
-    // Include accident supervisors and other parts clerks for internal visibility.
-    for (const u of staff) if (u.roles.some(role => ['accident_supervisor','parts_clerk'].includes(role))) recipients.add(u.id);
+    // Spec section 7: the accident expert of the case and the station hear about it; nobody else is broadcast to.
     const allowed = new Set(staff.map(u => u.id));
     recipients.delete(actor.user.id);
     const destination = selected.stationSnapshot?.name || selected.stationSnapshot?.code || selected.title || 'واحد تعمیر';
@@ -188,7 +187,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       .where(and(eq(users.tenantId, tenantId), eq(users.isActive, true)));
     let recipients = row.responsible && staff.some((u) => u.id === row.responsible) ? [row.responsible] : [];
     // No responsible on the case: every active accident coordinator of the dealership.
-    if (!recipients.length) recipients = staff.filter((u) => u.roles.some((r) => COORDINATOR_ROLES.includes(r as Role))).map((u) => u.id);
+    if (!recipients.length) recipients = staff.filter((u) => normalizeRoles(u.roles).some((r) => COORDINATOR_ROLES.includes(r))).map((u) => u.id);
     return this.create(actor, {
       recipients: recipients.filter((id) => id !== actor.user.id),
       body: `${TECHNICIAN_PROBLEM_LABELS[problem]} — ${row.t.title || row.department}`,
@@ -291,7 +290,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
     return rows.map(({ c, r, senderName, senderRoles, senderOwner, caseNumber }) => ({
       id: c.id,
       reminderId: r.id,
-      sender: { id: r.senderUserId, displayName: senderName, roleLabel: senderOwner ? 'مالک' : ((senderRoles as Role[]).map((role) => ROLE_LABELS[role]).filter(Boolean)[0] ?? '') },
+      sender: { id: r.senderUserId, displayName: senderName, roleLabel: senderOwner ? 'مالک' : (normalizeRoles(senderRoles as string[]).map((role) => ROLE_LABELS[role])[0] ?? '') },
       body: r.body,
       urgency: r.urgency as ReminderUrgency,
       source: r.source as ReminderSource,

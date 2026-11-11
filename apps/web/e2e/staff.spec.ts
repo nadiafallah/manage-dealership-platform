@@ -10,7 +10,7 @@ async function pinSignIn(page:Page,username:string,pin:string,devicePassword:str
   await page.context().clearCookies();
   await page.goto('/login');
   // Staff sign-in is the default of exactly two options.
-  await expect(page.getByRole('tab')).toHaveText(['ورود کارکنان','ورود مالک و مدیر سیستم']);
+  await expect(page.getByRole('tab')).toHaveText(['ورود کارکنان','ورود مدیر سیستم']);
   await expect(page.getByRole('tab',{name:'ورود کارکنان',exact:true})).toHaveAttribute('aria-selected','true');
   const form=page.locator('#login-panel-technician');
   await form.getByLabel('نام کاربری',{exact:true}).fill(username);

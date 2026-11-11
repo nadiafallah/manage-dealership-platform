@@ -5,7 +5,7 @@ import { newId } from '../src/common/ids';
 import { createHarness, type Harness, type Client } from './harness';
 let h:Harness,c:Client,p:Client,admin:Client,tech:Client,other:Client,manager:Client;
 let caseId:string,departmentId:string,stationId:string,techId:string,taskId:string,partId:string;
-beforeAll(async()=>{h=await createHarness();c=await h.loginAs('coordinator-new',['accident_coordinator']);p=await h.login('parts');admin=await h.login('admin');tech=await h.loginAs('tech-new',['technician']);other=await h.loginAs('tech-other',['technician']);manager=await h.login('manager');
+beforeAll(async()=>{h=await createHarness();c=await h.loginAs('coordinator-new',['accident_expert']);p=await h.login('parts');admin=await h.login('admin');tech=await h.loginAs('tech-new',['technician']);other=await h.loginAs('tech-other',['technician']);manager=await h.login('manager');
  const [u]=await h.db.db.select().from(users).where(eq(users.username,'tech-new'));techId=u.id;
  const ds=await c.get('/departments');departmentId=ds.body[0].id;
  const res=await c.post('/cases',{vehicle:{model:'خودرو آزمون',vin:'TESTVIN0000099001'},customer:{fullName:'مشتری آزمون',phone:'09000009900'},admittedAt:new Date().toISOString(),coverageType:'golden_card'});expect(res.status).toBe(201);caseId=res.body.id;
@@ -84,10 +84,11 @@ it('parts proposes, coordinator records external authorization, only matching ap
  const order={action:'order',expectedVersion:2,source:'external',unitPriceRial:1000,supplier:'فروشنده آزمون'};
  expect((await p.post(`/parts/${partId}/actions`,order)).body.code).toBe('MARKET_APPROVAL_REQUIRED');
  const decision={expectedVersion:1,decision:'approved',officialRecorded:true,source:'golden_card',reference:'TEST-APPROVAL-001',approver:'کارشناس آزمون',note:'ثبت مجوز سامانه رسمی آزمون'};
- expect((await p.post(`/workshop/quotes/${q.id}/decision`,{...decision,source:'insurer'})).body.code).toBe('QUOTE_WRONG_SOURCE');
- expect((await p.post(`/workshop/quotes/${q.id}/decision`,{...decision,officialRecorded:false})).body.code).toBe('OFFICIAL_APPROVAL_REQUIRED');
- // Parts may record the real payer response on its own quote; this does not replace the official authorization.
- expect((await p.post(`/workshop/quotes/${q.id}/decision`,decision)).status).toBe(201);
+ // Spec section 7: the accident expert records the payer's answer; the parts clerk only proposes the price.
+ expect((await p.post(`/workshop/quotes/${q.id}/decision`,decision)).status).toBe(403);
+ expect((await c.post(`/workshop/quotes/${q.id}/decision`,{...decision,source:'insurer'})).body.code).toBe('QUOTE_WRONG_SOURCE');
+ expect((await c.post(`/workshop/quotes/${q.id}/decision`,{...decision,officialRecorded:false})).body.code).toBe('OFFICIAL_APPROVAL_REQUIRED');
+ expect((await c.post(`/workshop/quotes/${q.id}/decision`,decision)).status).toBe(201);
  expect((await p.post(`/parts/${partId}/actions`,{...order,unitPriceRial:1200})).body.code).toBe('MARKET_APPROVAL_REQUIRED');
  expect((await p.post(`/parts/${partId}/actions`,order)).status).toBe(201);
 });
@@ -99,7 +100,7 @@ it('manager sees station reports but cannot perform operational actions',async()
 it('different tenant cannot read, assign, authorize or act on these resources',async()=>{
  const id=newId();await h.db.db.insert(tenants).values({id,code:'TEST-OTHER-'+id,name:'نمایندگی آزمون جدا',isTest:true});
  const [u]=await h.db.db.select().from(users).where(eq(users.username,'tech-other'));
- await h.db.db.update(users).set({tenantId:id,roles:['accident_coordinator']}).where(eq(users.id,u.id));
+ await h.db.db.update(users).set({tenantId:id,roles:['accident_expert']}).where(eq(users.id,u.id));
  // Re-login refreshes the tenant-bound session and permissions.
  const foreign=await h.login('tech-other');
  expect((await foreign.get('/workshop/overview')).body.tasks).toHaveLength(0);

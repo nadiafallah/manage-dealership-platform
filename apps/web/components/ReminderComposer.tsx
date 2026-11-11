@@ -32,7 +32,7 @@ export function ReminderComposer({ open, onClose, defaults, onSent }: { open: bo
   const { data: people } = useSWR<ReminderPerson[]>(open ? '/reminders/people' : null, fetcher);
   const [mode, setMode] = useState<'people' | 'role'>('people');
   const [userIds, setUserIds] = useState<string[]>([]);
-  const [role, setRole] = useState<Role>('accident_coordinator');
+  const [role, setRole] = useState<Role>('accident_expert');
   const [body, setBody] = useState('');
   const [urgent, setUrgent] = useState(false);
   const [withCase, setWithCase] = useState(true);
@@ -48,7 +48,7 @@ export function ReminderComposer({ open, onClose, defaults, onSent }: { open: bo
     const preset = (defaults?.userIds ?? []).filter((id) => id !== me.id);
     setMode(defaults?.role && !preset.length ? 'role' : 'people');
     setUserIds(preset);
-    setRole(defaults?.role ?? 'accident_coordinator');
+    setRole(defaults?.role ?? 'accident_expert');
     setBody(defaults?.body ?? '');
     setUrgent(false);
     setWithCase(true);
@@ -123,7 +123,7 @@ export function ReminderComposer({ open, onClose, defaults, onSent }: { open: bo
           <label className="field">
             <span>نقش گیرنده</span>
             <select className="input" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-              {ROLES.filter((r) => r !== 'accident_expert' && r !== 'accident_supervisor').map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+              {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
             <span className="hint">همهٔ همکاران فعال این نقش در همین نمایندگی تذکر را می‌گیرند.</span>
           </label>

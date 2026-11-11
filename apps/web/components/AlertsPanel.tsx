@@ -124,7 +124,7 @@ export function AlertSettingsPanel() {
       <div className="panel-head">
         <div>
           <h2>هشدار مبلغ قطعات</h2>
-          <p className="muted small">وقتی جمع قطعات یک پرونده از این مبلغ بگذرد، از مسئول تصادفات دربارهٔ پیش‌پرداخت پرسیده می‌شود. هر مضرب تازه دوباره می‌پرسد.</p>
+          <p className="muted small">وقتی جمع قطعات یک پرونده از این مبلغ بگذرد، از کارشناس تصادفات دربارهٔ پیش‌پرداخت پرسیده می‌شود. هر مضرب تازه دوباره می‌پرسد.</p>
         </div>
       </div>
       <form className="panel-body" onSubmit={save} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>

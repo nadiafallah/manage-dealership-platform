@@ -21,6 +21,7 @@ import {
   type CoverageType,
   type CreateCaseInput,
   type Paged,
+  normalizeRoles,
   type Role,
   type Task,
   type UpdateCaseInput,
@@ -61,9 +62,9 @@ export interface CaseImportFields {
 type VehicleInput = NonNullable<CreateCaseInput['vehicle']>;
 type CustomerInput = NonNullable<CreateCaseInput['customer']>;
 
-const RESPONSIBLE_ROLES: Role[] = ['accident_coordinator','accident_expert', 'accident_supervisor', 'system_admin'];
-/** "Transfer case" chooses among active accident coordinators only (not the support account). */
-const TRANSFER_ROLES: Role[] = ['accident_coordinator', 'accident_expert', 'accident_supervisor'];
+const RESPONSIBLE_ROLES: Role[] = ['accident_expert', 'system_admin'];
+/** "Transfer case" chooses among active accident experts only (not the support account). */
+const TRANSFER_ROLES: Role[] = ['accident_expert'];
 const FUTURE_TOLERANCE_MS = 10 * 60_000;
 // The UI records times to the minute; ordering checks accept that precision.
 export const MINUTE_TOLERANCE_MS = 60_000;
@@ -318,8 +319,8 @@ export class CasesService {
         .select({ id: users.id, roles: users.roles })
         .from(users)
         .where(and(eq(users.id, input.toUserId), eq(users.tenantId, tenantId), eq(users.isActive, true)));
-      if (!target || !target.roles.some((r) => TRANSFER_ROLES.includes(r as Role))) {
-        throw badRequest('INVALID_RESPONSIBLE', 'مسئول تازه باید مسئول تصادفات فعال همین نمایندگی باشد');
+      if (!target || !normalizeRoles(target.roles).some((r) => TRANSFER_ROLES.includes(r))) {
+        throw badRequest('INVALID_RESPONSIBLE', 'مسئول تازه باید کارشناس تصادفات فعال همین نمایندگی باشد');
       }
       const reason = input.reason?.trim() || null;
       requireSupportReason(actor, reason);
@@ -787,7 +788,7 @@ export class CasesService {
       .select({ roles: users.roles, isActive: users.isActive })
       .from(users)
       .where(and(eq(users.id, userId), eq(users.tenantId, tenantId)));
-    if (!u || !u.isActive || !u.roles.some((r) => RESPONSIBLE_ROLES.includes(r as Role))) {
+    if (!u || !u.isActive || !normalizeRoles(u.roles).some((r) => RESPONSIBLE_ROLES.includes(r))) {
       throw badRequest('INVALID_RESPONSIBLE', 'مسئول انتخاب‌شده معتبر نیست');
     }
   }

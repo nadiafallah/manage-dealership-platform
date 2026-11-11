@@ -49,10 +49,10 @@ async function job(caseId: string, title: string, options: { approve?: boolean; 
 beforeAll(async () => {
   h = await createHarness({ config: { DAILY_SCHEDULER: 'false' } });
   [coordA, coordB, coordC, coordD, tech, techB] = await Promise.all([
-    h.loginAs('p3-coord-a', ['accident_coordinator']),
-    h.loginAs('p3-coord-b', ['accident_coordinator']),
-    h.loginAs('p3-coord-c', ['accident_coordinator']),
-    h.loginAs('p3-coord-d', ['accident_coordinator']),
+    h.loginAs('p3-coord-a', ['accident_expert']),
+    h.loginAs('p3-coord-b', ['accident_expert']),
+    h.loginAs('p3-coord-c', ['accident_expert']),
+    h.loginAs('p3-coord-d', ['accident_expert']),
     h.loginAs('p3-tech-a', ['technician']),
     h.loginAs('p3-tech-b', ['technician']),
   ]);
@@ -277,9 +277,9 @@ describe('technician wage and monthly work', () => {
     const xlsx = await manager.get(`/reports/wages/export?month=${month}`);
     expect(xlsx.status).toBe(200);
     expect(xlsx.headers['content-type']).toContain('spreadsheetml');
-    // The support account does not see wages unless the owner grants it.
-    expect((await admin.get('/reports/wages')).status).toBe(403);
-    expect((await admin.get(`/cases/${golden}/wages`)).status).toBe(403);
+    // The system administrator may act for any role (spec section 3), wages included.
+    expect((await admin.get('/reports/wages')).status).toBe(200);
+    expect((await admin.get(`/cases/${golden}/wages`)).status).toBe(200);
     expect(await h.db.db.select().from(technicianWages).where(eq(technicianWages.taskId, a.id))).toHaveLength(1);
   });
 });

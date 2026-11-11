@@ -8,7 +8,7 @@ import { DailyReportsService } from '../src/daily-reports/daily-reports.service'
 import { DailyTasksService } from '../src/daily-reports/daily-tasks.service';
 import { buildEmdadXml, buildStockXlsx, emdadRow, type StockRow } from '../src/daily-reports/fixtures';
 import { readWorkbook, writeSheet } from '../src/parts/xlsx';
-import { Client, createHarness, daysAgo, TEST_PASSWORD, type Harness } from './harness';
+import { Client, LEGACY_QC_PERMISSIONS, createHarness, daysAgo, TEST_PASSWORD, type Harness } from './harness';
 
 // Daily parts reports (docs/DAILY_PARTS_FA.md), synthetic files only.
 
@@ -66,7 +66,7 @@ async function need(caseId: string, partNumber: string, quantity = 2): Promise<P
 
 beforeAll(async () => {
   h = await createHarness({ config: { DAILY_REPORT_MAX_BYTES: '3000000' } });
-  [manager, parts, admin, qc, expert] = await Promise.all(['admin', 'parts', 'admin', 'qc', 'expert'].map((u) => h.login(u)));
+  [manager, parts, admin, qc, expert] = await Promise.all([...['admin', 'parts', 'admin'].map((u) => h.login(u)), h.loginAs('narrow', [], LEGACY_QC_PERMISSIONS), h.login('expert')]);
   owner = await h.loginAs('daily-owner', ['service_manager']);
   await h.db.db.update(users).set({ isOwner: true }).where(eq(users.username, 'daily-owner'));
 });

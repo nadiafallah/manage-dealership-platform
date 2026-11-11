@@ -3,7 +3,8 @@ import { login, openCaseSections } from './helpers';
 
 // Issue #12 in the browser, on demo case 5 (personal): QC failed once, the
 // corrective activity was approved, round 2 passed and the case is technically
-// closed. The cashier settles and closes financially, the expert hands over.
+// closed. Since the six-role change (spec section 3) the accident experts also
+// settle, close financially and hand over; the cashier role is retired.
 async function openCase5(page: Page, user: string) {
   await page.goto('about:blank');
   await page.context().clearCookies();
@@ -18,18 +19,17 @@ test('QC history, settlement, financial close and handover archive the case', as
   const dialog = page.getByRole('dialog');
   const panel = page.getByTestId('completion-panel');
 
-  // QC inspector: both rounds visible, the corrective activity is marked.
+  // An accident expert: both QC rounds visible, the corrective activity is marked.
   await openCase5(page, 'qc');
   await expect(page.getByTestId('qc-round')).toHaveCount(2);
   await expect(panel).toContainText('دور ۲: قبول');
   await expect(panel).toContainText('پوست‌پرتقالی روی لبه درب');
   await expect(page.getByTestId('task').filter({ hasText: 'کار اصلاحی کنترل کیفیت' })).toHaveCount(1);
-  await expect(panel.getByRole('button', { name: 'تحویل خودرو' })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'تحویل خودرو' })).toBeDisabled();
 
-  // Cashier: the balance blocks the close; record the settlement, then close.
-  await openCase5(page, 'cashier');
+  // A second accident expert: record the settlement, then close financially.
+  await openCase5(page, 'supervisor');
   await expect(panel).toContainText('سهم مشتری کامل دریافت نشده است');
-  await expect(panel.getByRole('button', { name: 'بستن مالی' })).toBeDisabled();
   await page.getByTestId('finance-panel').getByRole('button', { name: 'ثبت دریافت از مشتری' }).click();
   await expect(dialog.getByLabel('مبلغ دریافتی (ریال) *')).toHaveValue('8000000');
   await dialog.getByLabel('شماره پیگیری / رسید پرداخت *').fill('POS-E2E-5');

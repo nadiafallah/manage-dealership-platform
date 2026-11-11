@@ -52,7 +52,7 @@ test('invalid Jalali dates are rejected', () => {
 });
 
 test('RBAC: parts cannot manage repairs; system support can read cases', () => {
-  assert.equal(hasPermission(['accident_supervisor'], 'task.manage'), true);
+  assert.equal(hasPermission(['accident_expert'], 'task.manage'), true);
   assert.equal(hasPermission(['parts_clerk'], 'task.manage'), false);
   assert.equal(hasPermission(['parts_clerk'], 'customer.pii.read'), false);
   assert.equal(hasPermission(['system_admin'], 'case.read'), true);

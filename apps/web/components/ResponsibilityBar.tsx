@@ -21,7 +21,7 @@ export function ResponsibilityBar({ kase, onChange }: { kase: CaseDetail; onChan
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const support = !me.isOwner && me.roles.includes('system_admin');
-  const choices = (assignable ?? []).filter((u) => u.id !== kase.responsible?.id && (!u.roles || u.roles.some((r) => ['accident_coordinator', 'accident_expert', 'accident_supervisor'].includes(r))));
+  const choices = (assignable ?? []).filter((u) => u.id !== kase.responsible?.id && (!u.roles || u.roles.some((r) => r === 'accident_expert')));
 
   async function transfer() {
     if (!to || busy) return;

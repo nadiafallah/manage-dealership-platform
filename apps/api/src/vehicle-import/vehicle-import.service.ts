@@ -12,6 +12,7 @@ import {
   type CaseStage,
   type CoverageType,
   type CreateCaseInput,
+  normalizeRoles,
   type Role,
   type UpdateCaseInput,
   type VehicleImport,
@@ -48,7 +49,7 @@ import {
 } from './vehicle-sheet';
 
 const MAX_ROWS = 1000;
-const RESPONSIBLE_ROLES: Role[] = ['accident_expert', 'accident_supervisor', 'service_manager'];
+const RESPONSIBLE_ROLES: Role[] = ['accident_expert', 'service_manager'];
 // Stages reached only through their own workflow (QC/technical close, handover).
 const WORKFLOW_ONLY: CaseStage[] = ['ready_for_delivery', 'delivered'];
 
@@ -290,7 +291,7 @@ export class VehicleImportService {
       .select({ id: users.id, displayName: users.displayName, roles: users.roles })
       .from(users)
       .where(and(eq(users.tenantId, tenantId), eq(users.isActive, true)));
-    const responsible = people.filter((u) => (u.roles as Role[]).some((r) => RESPONSIBLE_ROLES.includes(r)));
+    const responsible = people.filter((u) => normalizeRoles(u.roles).some((r) => RESPONSIBLE_ROLES.includes(r)));
     const units = await this.db
       .select({ id: departments.id, name: departments.name })
       .from(departments)
