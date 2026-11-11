@@ -1,3 +1,5 @@
+> **Superseded (package 6, 2026-11-10):** the Signature theme and the `?ui=classic` switch were removed. The current design system is [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md); this file is kept as history.
+
 # تحویل طراحی HEDAX Signature — منیج
 
 - **شاخه:** `feature/hedax-signature-3d-manage` در fork `nadiafallah/manage-dealership-platform`

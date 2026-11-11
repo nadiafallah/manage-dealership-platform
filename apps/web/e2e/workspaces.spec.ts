@@ -8,7 +8,7 @@ test('department menu exposes only the desks of the six roles, on desktop and ph
  await expect(page.getByRole('heading',{name:'واحد تصادفات',exact:true})).toBeVisible();
  const launch=page.getByRole('navigation',{name:'میزهای کار مجاز من'});
  await expect(launch.getByRole('link',{name:/کارشناس تصادفات/})).toBeVisible();await expect(launch.getByRole('link',{name:/مالک|مالی و صندوق|کنترل کیفیت/})).toHaveCount(0);
- await launch.getByRole('link',{name:/کارشناس تصادفات/}).click();await expect(page.getByRole('heading',{name:'میز کار کارشناس تصادفات'})).toBeVisible();
+ await launch.getByRole('link',{name:/کارشناس تصادفات/}).click();await expect(page.locator('.desk-kicker')).toHaveText('میز کار کارشناس تصادفات');await expect(page.getByRole('heading',{level:1,name:/بخیر/})).toBeVisible();
  await page.screenshot({path:info.outputPath('expert-workspace-desktop.png'),fullPage:true});
  await page.goto('/accidents/owner');await expect(page.getByRole('heading',{name:'این میز کار برای شما فعال نیست'})).toBeVisible();
  await page.setViewportSize({width:390,height:844});await page.goto('/accidents/expert');
@@ -20,9 +20,9 @@ test('department menu exposes only the desks of the six roles, on desktop and ph
  const cases=await (await page.request.get('/api/v1/cases')).json();
  await page.goto(`/cases/${cases.items[0].id}#case-quality`);
  await expect(page.locator('#case-quality')).toBeInViewport();
- const shortcut=page.getByRole('link',{name:'کنترل کیفیت و تحویل',exact:true});
- await shortcut.scrollIntoViewIfNeeded();await shortcut.click();
- await expect(page.locator('#case-quality')).toBeInViewport();
+ // The folder opens the tab that holds the linked section; the tabs switch without reloading.
+ await page.getByRole('tab',{name:'تاریخچه',exact:true}).click();await expect(page.locator('#case-quality')).toHaveCount(0);
+ await page.getByRole('tab',{name:'کار امروز',exact:true}).click();await expect(page.locator('#case-quality')).toBeAttached();
 });
 test('owner edits individual exceptions and role defaults with review and an intact phone layout',async({page},info)=>{
  await login(page,'manager');

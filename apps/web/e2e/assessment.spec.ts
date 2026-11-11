@@ -50,7 +50,7 @@ test('expert: assessment, authorization and a supplement that keeps the approved
   await panel.getByRole('button',{name:/ارسال به قطعات و تأمین/}).click();
   await expect(page.locator('#case-parts')).toBeInViewport();
   await expect(page.getByTestId('part-stock')).toHaveCount(1);
-  await page.locator('#case-assessment > summary').scrollIntoViewIfNeeded();
+  await page.getByRole('tab', { name: 'کارشناسی', exact: true }).click();
 
   // Hidden damage: a supplement copies the approved lines and adds a new one.
   await panel.getByRole('button', { name: 'ثبت الحاقیه (آسیب پنهان)' }).click();

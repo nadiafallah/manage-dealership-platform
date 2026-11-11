@@ -9,12 +9,12 @@ export function parsePlate(text: string) {
 }
 
 /** Renders a plate the way workshop staff recognise it; free text otherwise. */
-export function Plate({ value, large }: { value: string | null | undefined; large?: boolean }) {
+export function Plate({ value, large, size }: { value: string | null | undefined; large?: boolean; size?: 'xl' }) {
   if (!value) return <span className="muted small">بدون پلاک</span>;
   const p = parsePlate(value);
   if (!p) return <span className="plate-free">{toPersianDigits(value)}</span>;
   return (
-    <span className={`plate${large ? ' lg' : ''}`} aria-label={`پلاک ${toPersianDigits(value)}`} role="img">
+    <span className={`plate${large || size ? ' lg' : ''}${size ? ` ${size}` : ''}`} aria-label={`پلاک ${toPersianDigits(value)}`} role="img">
       <span className="flag" aria-hidden />
       <span className="seg" aria-hidden>
         <span>{toPersianDigits(p.a)}</span>

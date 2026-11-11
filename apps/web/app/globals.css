@@ -1,34 +1,36 @@
 /* Manage by HEDAX — design tokens and base styles. */
 :root {
-  --navy: #0f1a2b;
-  --navy-2: #1a2740;
-  --navy-line: #22314b;
-  --on-navy: #e8ecf3;
-  --on-navy-muted: #9aa6ba;
-  --ground: #f5f6f8;
-  --surface: #ffffff;
-  --line: #e3e6ec;
-  --ink: #121a2a;
-  --muted: #5b6576;
-  --gold: #c9a46a;
-  --gold-ink: #8a6a35;
-  --gold-soft: #f6efe3;
-  --ok: #1e7a52;
-  --ok-soft: #e4f3eb;
-  --warn: #966112;
-  --warn-soft: #fbf0dc;
+  /* Paper space of the design language (docs/PRODUCT_SPEC_FA.md §12): warm, light,
+     «پوشهٔ پرونده روی میز». The dark space (login, control room) lives in manage-ui.css. */
+  --navy: #0e5f66;
+  --navy-2: #0a464c;
+  --navy-line: #e6e2d9;
+  --on-navy: #3a4049;
+  --on-navy-muted: #7c828c;
+  --ground: #f3f1ec;
+  --surface: #fffefb;
+  --line: #e6e2d9;
+  --ink: #15181d;
+  --muted: #5f6672;
+  --gold: #0e5f66;
+  --gold-ink: #0a464c;
+  --gold-soft: #e2f0ee;
+  --ok: #0e7a55;
+  --ok-soft: #e6f2ec;
+  --warn: #7a4a0b;
+  --warn-soft: #fbefd9;
   --bad: #b42335;
   --bad-soft: #fbe7ea;
 
   /* Existing component tokens keep their roles across the application. */
-  --carbon: var(--navy);
-  --carbon-2: var(--navy-2);
-  --carbon-3: var(--navy-line);
+  --carbon: #15181d;
+  --carbon-2: #2a2e35;
+  --carbon-3: #3a4049;
   --blue: var(--navy);
   --blue-strong: var(--navy-2);
-  --blue-soft: var(--on-navy);
+  --blue-soft: #e2f0ee;
   --silver: var(--line);
-  --silver-2: var(--on-navy);
+  --silver-2: #f3f1ec;
   --steel: var(--muted);
   --steel-2: var(--muted);
   --paper: var(--ground);

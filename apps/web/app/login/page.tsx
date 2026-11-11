@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { api, ApiError, errorMessage } from '@/lib/api';
 import { toLatinDigits, toPersianDigits, type Me } from '@manage/shared';
 import {InstallButton} from '@/components/InstallApp';
+import { Plate } from '@/components/Plate';
 
 type LoginSubmission = { busy: boolean; setBusy: (busy: boolean) => void };
 
@@ -296,22 +297,42 @@ function LoginPanels() {
   );
 }
 
+const SCENE = [
+  { car: 'سورن پلاس', where: 'تحویل', plate: '۴۷ ج ۸۱۲ - ۱۶', x: -250, y: -140, z: 60, delay: '0s' },
+  { car: 'ریرا', where: 'نقاشی · جایگاه ۲', plate: '۲۳ ب ۴۵۶ - ۱۶', x: -60, y: 10, z: 120, delay: '-2.3s', hot: true },
+  { car: 'تارا', where: 'منتظر قطعه', plate: '۶۸ د ۱۹۳ - ۱۶', x: 110, y: 160, z: 30, delay: '-4.6s' },
+];
+
+/** Login (spec §3, §12, mockup Main.dc.html): a dark, cinematic scene of floating case folders and two doors. */
 export default function LoginPage() {
   return (
-    <main className="login entry-login">
-      <div className="side">
-        <div className="sx-stage" aria-hidden="true"><i /><i /><i /><i /></div>
+    <main className="login entry-login lg-root">
+      <div className="side lg-scene">
         <span className="brand-lockup" role="img" aria-label="Manage by HEDAX">
           <img src="/brand/manage-wordmark-dark.svg" alt="" width={124} height={30} />
           <span className="brand-by" aria-hidden="true">by HEDAX</span>
         </span>
         <div className="entry-story">
-          <span className="entry-line" aria-hidden="true" />
           <div className="claim">هر خودرو،<br /> یک مسیر روشن.</div>
           <p>منیج پیگیری می‌کند، شما تصمیم می‌گیرید.</p>
-          <p className="entry-description">سامانهٔ یکپارچهٔ مدیریت عملیات نمایندگی‌های خودرو</p>
         </div>
-        <p className="entry-signature"><span>نمایندگی ۱۳۰۷ ایران‌خودرو حسینی · قم</span><span>محصولی از هداکس</span></p>
+        <div className="scene" aria-hidden="true">
+          <div className="floor" />
+          <div className="stack3d">
+            {SCENE.map((f) => (
+              <div key={f.car} className={`f3d${f.hot ? ' hot' : ''}`} style={{ transform: `translate3d(${f.x}px, ${f.y}px, ${f.z}px)`, animationDelay: f.delay }}>
+                <div className="f3d-head"><strong>{f.car}</strong><span>{f.where}</span></div>
+                <Plate value={f.plate} large />
+              </div>
+            ))}
+          </div>
+          <div className="route">
+            {['پذیرش', 'کارشناسی', 'قطعات', 'تعمیر', 'تحویل'].map((r, i) => (
+              <span key={r} className="route-step"><span className={`d${i < 4 ? ' on' : ''}`} />{r}{i < 4 && <span className="l" />}</span>
+            ))}
+          </div>
+        </div>
+        <p className="entry-signature"><span>نمایندگی ۱۳۰۷ ایران‌خودرو · قم</span><span>یک محصول هداکس</span></p>
       </div>
       <Suspense>
         <LoginPanels />

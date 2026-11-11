@@ -38,7 +38,7 @@ test('system support previews and applies the vehicle sheet, then sees provenanc
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await caseLink.click();
-  await openCaseSections(page,'info','provenance','tasks');
+  await openCaseSections(page,'info','provenance');
   await expect(page.locator('#case-info').getByText('شماره کارت پذیرش', { exact: true })).toBeVisible();
   // The same source identifier can also occur in the import-history panel.
   const details = page.locator('#case-info');
@@ -48,5 +48,6 @@ test('system support previews and applies the vehicle sheet, then sees provenanc
   await expect(prov).toContainText('vehicle-import-sample.xlsx');
   await prov.locator('summary').click();
   await expect(prov).toContainText('متن نمونه برگه اولیه');
+  await openCaseSections(page,'tasks');
   await expect(page.getByTestId('task').filter({ hasText: 'صافکاری گلگیر جلو' })).toHaveCount(1);
 });

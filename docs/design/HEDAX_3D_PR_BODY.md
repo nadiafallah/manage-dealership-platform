@@ -1,3 +1,5 @@
+> **Superseded (package 6, 2026-11-10):** the Signature theme and the `?ui=classic` switch were removed. The current design system is [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md); this file is kept as history.
+
 # PR text — HEDAX Signature
 
 Title: `HEDAX Signature: spatial dark-material redesign with classic switch`

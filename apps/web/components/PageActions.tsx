@@ -9,7 +9,8 @@ export function PageActions(){
  if(path.startsWith('/workshop'))return null;
  let label='واحد تصادفات';let actions:Action[]=[];
  const match=path.match(/^\/cases\/([^/]+)$/);
- if(match&&!['new','import'].includes(match[1]))actions=[{label:'کارشناسی',detail:'',href:'#case-assessment',icon:'file',permission:can('assessment.manage')?'assessment.manage':'assessment.authorize'},{label:'قطعات',detail:'',href:'#case-parts',icon:'box',permission:can('part.request')?'part.request':'part.manage'},{label:'فعالیت‌های تعمیر',detail:'',href:'#case-tasks',icon:'wrench',permission:can('task.manage')?'task.manage':'task.approve'},{label:'موانع',detail:'',href:'#case-blockers',icon:'alert',permission:can('blocker.report')?'blocker.report':'blocker.manage'},{label:'کنترل کیفیت و تحویل',detail:'',href:'#case-quality',icon:'check',permission:can('qc.inspect')?'qc.inspect':'case.technical_close'},{label:'مالی و پیش‌پرداخت',detail:'',href:'#case-finance',icon:'money',permission:can('finance.payment')?'finance.payment':can('finance.propose')?'finance.propose':can('finance.approve')?'finance.approve':'finance.close'}];
+ // The case folder has its own tabs (کار امروز · کارشناسی · قطعات · مدارک · تاریخچه).
+ if(match&&!['new','import'].includes(match[1]))return null;
  else if(path==='/users'){label='مدیریت کارکنان';actions=[{label:'افزودن کارمند',detail:'',href:'#invite-staff',icon:'add',permission:'user.manage'},{label:'افزودن تعمیرکار',detail:'',href:'#technicians',icon:'add',permission:'user.manage'}];}
  else if(path==='/reference-data'){label='اطلاعات پایه';}
  else if(path.startsWith('/modules'))return null;

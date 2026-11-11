@@ -15,7 +15,8 @@ test('compact case, PDF-style assessment preview and safe repeat-admission prefi
   expect(created.ok()).toBe(true); const c = await created.json();
   await page.goto(`/cases/${c.id}`);
   await expect(page.locator('#case-assessment')).toHaveAttribute('open','');
-  await expect(page.locator('#case-parts')).not.toHaveAttribute('open','');
+  await expect(page.getByRole('tab',{name:'کارشناسی',exact:true})).toHaveAttribute('aria-selected','true');
+  await expect(page.locator('#case-parts')).toHaveCount(0);
   await expect(page.getByTestId('finance-panel')).not.toBeVisible();
   await page.getByRole('button',{name:'شروع کارشناسی',exact:true}).click();
   const dialog = page.getByRole('dialog');
@@ -47,15 +48,15 @@ test('compact case, PDF-style assessment preview and safe repeat-admission prefi
   await expect(page.getByTestId('assessment-item')).toHaveCount(1);
   await expect(page.getByTestId('assessment-panel')).toContainText('پیش‌نویس');
   await page.screenshot({path:info.outputPath('compact-case-desktop.png'),fullPage:true});
-  await page.getByRole('navigation',{name:'دسترسی سریع صفحه'}).getByRole('link',{name:'قطعات',exact:true}).click();
+  await page.getByRole('tab',{name:'قطعات',exact:true}).click();
   await expect(page.locator('#case-parts')).toHaveAttribute('open','');
   await page.locator('#case-parts > summary').click();
-  await page.getByRole('navigation',{name:'دسترسی سریع صفحه'}).getByRole('link',{name:'قطعات',exact:true}).click();
-  await expect(page.locator('#case-parts')).toHaveAttribute('open','');
+  await expect(page.locator('#case-parts')).not.toHaveAttribute('open','');
+  // Printing renders every tab of the folder; afterwards only the chosen tab stays.
   await page.evaluate(()=>window.dispatchEvent(new Event('beforeprint')));
   await expect(page.locator('#case-history')).toHaveAttribute('open','');
   await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
-  await expect(page.locator('#case-history')).not.toHaveAttribute('open','');
+  await expect(page.locator('#case-history')).toHaveCount(0);
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:info.outputPath('compact-case-mobile.png'),fullPage:true});

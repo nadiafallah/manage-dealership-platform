@@ -89,6 +89,8 @@ Generated from controller decorators by `node scripts/check-docs.mjs --write`; C
 | GET | `/api/v1/daily-reports/status` | [source](../apps/api/src/daily-reports/daily-reports.controller.ts) |
 | GET | `/api/v1/dashboard` | [source](../apps/api/src/accident/accident.controllers.ts) |
 | GET | `/api/v1/departments` | [source](../apps/api/src/reference/reference.controller.ts) |
+| GET | `/api/v1/desk/folders/:id` | [source](../apps/api/src/desk/desk.controller.ts) |
+| GET | `/api/v1/desk/folders` | [source](../apps/api/src/desk/desk.controller.ts) |
 | GET | `/api/v1/emdad/requests/:id` | [source](../apps/api/src/daily-reports/daily-reports.controller.ts) |
 | GET | `/api/v1/health` | [source](../apps/api/src/health/health.controller.ts) |
 | GET | `/api/v1/notifications` | [source](../apps/api/src/daily-reports/daily-reports.controller.ts) |
