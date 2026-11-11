@@ -10,7 +10,7 @@ type Technician = { id: string; username: string; displayName: string; isActive:
 // Units in the order the workshop names them: صافکار، نقاش، جلوبندی‌کار، باتری‌ساز، مکانیک.
 const UNITS: RepairTrade[] = ['body', 'paint', 'suspension', 'electrical', 'mechanical', 'engine_tuning'];
 // Roles offered for new staff. The legacy expert/supervisor roles stay readable but are not offered.
-const STAFF_ROLES: PinLoginRole[] = ['technician', 'service_manager', 'accident_coordinator', 'parts_clerk', 'cashier', 'qc_inspector'];
+const STAFF_ROLES: PinLoginRole[] = ['technician', 'accident_expert', 'parts_clerk', 'service_manager'];
 type Pending = { tech: Technician; kind: 'pin' | 'active' | 'signout' };
 const DEVICE_PASSWORD = '(?=.*[A-Za-z])(?=.*[0-9]).{8,128}';
 const PIN = '[0-9۰-۹]{4}';

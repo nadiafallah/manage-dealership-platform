@@ -139,9 +139,24 @@ export class StockService {
       this.db,
       rows.map((r) => ({ quantity: r.i.quantity, reserved: r.reserved, issued: r.issued })),
     );
+    // «رزرو فعال برای پروندهٔ …» (spec section 7): who holds each code, so it is never picked for another vehicle.
+    const holders = new Map<string, { caseId: string; caseNumber: string; quantity: string }[]>();
+    const codes = [...new Set(rows.map((r) => r.i.fullStockCode))];
+    if (codes.length) {
+      const held = await this.db
+        .select({ code: stockReservations.fullStockCode, loc: stockReservations.locationAddress, caseId: cases.id, caseNumber: cases.caseNumber, quantity: stockReservations.quantity })
+        .from(stockReservations)
+        .innerJoin(cases, eq(cases.id, stockReservations.caseId))
+        .where(and(eq(stockReservations.tenantId, tenantId), inArray(stockReservations.fullStockCode, codes), sql`(${stockReservations.status} = 'reserved' or (${stockReservations.status} = 'issued' and ${stockReservations.reflectedAt} is null))`));
+      for (const h of held) {
+        const k = `${h.code}@${h.loc}`;
+        holders.set(k, [...(holders.get(k) ?? []), { caseId: h.caseId, caseNumber: h.caseNumber, quantity: dec(h.quantity)! }]);
+      }
+    }
     return {
       snapshot: snapshotInfo(snap),
       items: rows.map(({ i, alias, reserved, issued }, n) => ({
+        reservedFor: holders.get(`${i.fullStockCode}@${i.locationAddress}`) ?? [],
         fullStockCode: i.fullStockCode,
         rawCode: i.rawCode,
         basePartNumber: i.basePartNumber ?? alias?.basePartNumber ?? null,
@@ -323,16 +338,9 @@ export class StockService {
         if (r.status !== 'issued' || r.reflectedAt) throw invalid();
         patch = { status: 'cancelled', closedAt: now, closedBy: actor.user.id, reason: input.reason! };
         break;
-      case 'reflect': {
-        if (r.status !== 'issued' || r.reflectedAt) throw invalid();
-        const snap = await this.active(tx, tenantId);
-        // Only a report taken after the issue can contain it.
-        if (!snap || !r.issuedAt || snap.reportedAt.getTime() <= r.issuedAt.getTime()) {
-          throw badRequest('REPORT_BEFORE_ISSUE', 'گزارش فعال قبل از خروج تهیه شده است؛ پس از ورود گزارش بعدی تأیید کنید');
-        }
-        patch = { reflectedAt: now, reflectedBy: actor.user.id, reflectedSnapshotId: snap.id, reason: input.reason ?? r.reason };
-        break;
-      }
+      case 'reflect':
+        // Spec section 7: deduction stops automatically with «پایان کار»; there is no manual step any more.
+        throw badRequest('REFLECT_AUTOMATIC', 'کسر از موجودی با «پایان کار» پرونده خودکار متوقف می‌شود؛ تأیید دستی لازم نیست');
     }
     const [row] = await tx
       .update(stockReservations)
@@ -344,12 +352,49 @@ export class StockService {
       entityType: 'part',
       entityId: r.partRequestId,
       caseId: r.caseId,
-      action: `stock.${input.action === 'reflect' ? 'reflected' : input.action === 'issue' ? 'issued' : input.action === 'release' ? 'released' : 'issue_cancelled'}`,
+      action: `stock.${input.action === 'issue' ? 'issued' : input.action === 'release' ? 'released' : 'issue_cancelled'}`,
       reason: input.reason ?? null,
       before: { reservationId: id, status: r.status, reflectedAt: r.reflectedAt?.toISOString() ?? null },
       after: { reservationId: id, status: row.status, reflectedAt: row.reflectedAt?.toISOString() ?? null },
       snapshot: { version: row.version, row: { id, status: row.status } },
     });
+  }
+
+  /**
+   * «پایان کار» (spec section 7): every part handed over to this case stops
+   * lowering the usable quantity, because from now on the business system's own
+   * report shows the consumption. Also marks the handed-over lines as consumed.
+   */
+  async finishCase(tx: DbOrTx, actor: Actor, caseId: string): Promise<number> {
+    const tenantId = actor.user.tenantId;
+    const now = new Date();
+    const snap = await this.active(tx, tenantId);
+    const open = await tx
+      .select()
+      .from(stockReservations)
+      .where(and(eq(stockReservations.tenantId, tenantId), eq(stockReservations.caseId, caseId), eq(stockReservations.status, 'issued'), isNull(stockReservations.reflectedAt)))
+      .for('update');
+    for (const r of open) {
+      await tx
+        .update(stockReservations)
+        .set({ reflectedAt: now, reflectedBy: actor.user.id, reflectedSnapshotId: snap?.id ?? null, updatedAt: now, version: r.version + 1 })
+        .where(and(eq(stockReservations.id, r.id), eq(stockReservations.version, r.version)));
+    }
+    const consumed = await tx
+      .update(partRequests)
+      .set({ consumedAt: now, updatedAt: now })
+      .where(and(eq(partRequests.tenantId, tenantId), eq(partRequests.caseId, caseId), eq(partRequests.status, 'handed_over'), isNull(partRequests.consumedAt)))
+      .returning({ id: partRequests.id });
+    if (open.length || consumed.length) {
+      await this.audit.record(tx, actor, {
+        entityType: 'case',
+        entityId: caseId,
+        caseId,
+        action: 'stock.finished_with_case',
+        after: { reservations: open.map((r) => r.id), consumedParts: consumed.map((c) => c.id), snapshotId: snap?.id ?? null },
+      });
+    }
+    return open.length;
   }
 
   async reservations(

@@ -1,3 +1,4 @@
+import type { PartFlowAction, PartFlowState } from './part-flow';
 import type {
   AssessmentItemAction,
   AssessmentKind,
@@ -230,6 +231,32 @@ export interface Part {
   /** Ordered and past its expected arrival. */
   overdue: boolean;
   version: number;
+  /** Unified list (spec section 7): derived flow state and the only actions valid now. */
+  flowState: PartFlowState;
+  allowedActions: PartFlowAction[];
+  /** The line came from a supplement (الحاقیه), or a supplement raised its quantity. */
+  fromSupplement: boolean;
+  consumedAt: string | null;
+  returnedAt: string | null;
+  returnReason: string | null;
+  /** Latest official Emdad Vijeh status linked to this line (text and date of the report). */
+  emdad: { requestNo: string | null; category: string; statusText: string | null; reportAt: string } | null;
+  /** Open price announcement of the parts clerk, waiting for the expert. */
+  priceNotice: PriceNotice | null;
+}
+
+export interface PriceNotice {
+  id: string;
+  partId: string;
+  saleUnitRial: number;
+  note: string | null;
+  announcedBy: UserRef;
+  announcedAt: string;
+  response: 'approved' | 'instruction' | null;
+  instruction: string | null;
+  respondedBy: UserRef | null;
+  respondedAt: string | null;
+  version: number;
 }
 
 export interface PartImportRow {
@@ -244,9 +271,12 @@ export interface PartImportRow {
 
 export interface PartImportResult {
   dryRun: boolean;
+  /** Fresh lines only. */
   rows: PartImportRow[];
   errors: { row: number; message: string }[];
   created: number;
+  /** Same technical code as a line already in the list (or earlier in the file): set aside, never a new row. */
+  duplicates: PartImportRow[];
 }
 
 export interface FinanceApproval {
@@ -634,18 +664,22 @@ export interface PartDiscrepancy {
   version: number;
 }
 
-/** A non-blocking alert for the accident coordinator (see AlertsService). */
+/** A non-blocking cost alert for the accident expert (see AlertsService and alerts.ts). */
 export interface CaseAlert {
   caseId: string;
   caseNumber: string;
   plate: string | null;
   vehicleLabel: string;
   coverageType: string;
-  kind: 'advance' | 'parts_amount';
+  kind: 'parts_amount' | 'expensive_part';
   level: number;
-  /** parts_amount only: current parts total and the threshold, in Rial. */
+  /** parts_amount: the parts total; expensive_part: the amount of the expensive line (Rial). */
   totalRial: number | null;
   thresholdRial: number | null;
+  /** expensive_part only: the line that raised the alert. */
+  partDescription: string | null;
+  /** The case's accident expert (who answers), when one is set. */
+  responsible: { id: string; displayName: string } | null;
 }
 
 export const ALERT_RESPONSE_LABELS = { received: 'گرفتم', not_received: 'نگرفتم', not_needed: 'لازم نیست' } as const;

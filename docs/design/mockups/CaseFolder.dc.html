@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>پوشهٔ پرونده — ریرا</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F3F1EC}
+a{color:#0E5F66}a:hover{color:#0A464C}
+.cf *{box-sizing:border-box}
+.paper{position:relative;background:#FFFEFB;border:1px solid #E6E2D9;border-radius:18px;box-shadow:0 1px 0 #fff inset,0 2px 4px rgba(21,24,29,.04),0 22px 44px -26px rgba(21,24,29,.3)}
+.sheet{position:relative;z-index:0}
+.sheet::before{content:"";position:absolute;inset:0;border-radius:18px;background:#F8F6F1;border:1px solid #E6E2D9;transform:translate(-6px,6px) rotate(-.7deg);z-index:-1}
+.plate{display:inline-flex;align-items:stretch;direction:ltr;height:52px;border-radius:9px;background:#FDFDFA;border:1.5px solid #1C1F24;overflow:hidden;font-family:Vazirmatn,sans-serif;color:#111}
+.plate .pf{width:24px;background:#1F4FBF;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:0 5px}
+.plate .pf i{display:block;height:3px;border-radius:1px}
+.plate .pf i:nth-child(1){background:#239F40}.plate .pf i:nth-child(2){background:#fff}.plate .pf i:nth-child(3){background:#DA0000}
+.plate .pn{padding:0 9px;font-size:28px;font-weight:700;display:flex;align-items:center}
+.plate .pl{font-size:26px;font-weight:700;display:flex;align-items:center;padding:0 2px}
+.plate .pr{border-left:1.5px solid #1C1F24;padding:0 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:21px;font-weight:700;line-height:1}
+.plate .pr small{font-size:9px;font-weight:600;margin-bottom:2px}
+.journey{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.jstep{display:flex;flex-direction:column;gap:8px;font-size:13px;color:#7C828C}
+.jstep i{height:5px;border-radius:3px;background:#E5E1D8}
+.jstep.done i{background:#0E5F66}.jstep.done{color:#3A4049}
+.jstep.now i{background:linear-gradient(90deg,#E5E1D8 40%,#0E5F66 40%)}.jstep.now{color:#15181D;font-weight:700}
+.tabs{display:flex;gap:28px;border-bottom:1px solid #E4E0D7}
+.tabs a{padding:0 0 12px;font-size:14px;color:#6A707B;text-decoration:none;font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs a.on{color:#15181D;border-color:#15181D;font-weight:700}
+.lbl{font-size:12px;color:#7C828C}
+.btn{height:50px;padding:0 22px;border-radius:14px;border:0;background:#0E5F66;color:#fff;font:700 15px Vazirmatn,sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:10px;box-shadow:0 10px 24px -12px rgba(14,95,102,.7)}
+.btn2{height:50px;padding:0 20px;border-radius:14px;border:1px solid #DCD7CC;background:transparent;color:#3A4049;font:600 15px Vazirmatn,sans-serif;cursor:pointer}
+.check{display:flex;align-items:center;gap:12px;font-size:14px;color:#3A4049}
+.check input{width:20px;height:20px;accent-color:#0E5F66}
+.stn{display:grid;grid-template-columns:28px 1fr auto auto;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid #EEEAE2;font-size:14px}
+.stn:last-child{border-bottom:0}
+.num{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;background:#EEEBE4;color:#5F6672}
+.num.d{background:#0E5F66;color:#fff}.num.n{background:#15181D;color:#fff}
+.part{display:flex;flex-direction:column;gap:6px;padding:16px 0;border-bottom:1px dashed #E2DDD3}
+.part:last-child{border-bottom:0}
+.tag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.t-ok{background:#E2F0EE;color:#0A464C}.t-em{background:#E3ECF8;color:#1E4A85}.t-wait{background:#FBEFD9;color:#7A4A0B}
+.seg3{display:flex;gap:8px;flex-wrap:wrap}
+.seg3 button{height:38px;padding:0 14px;border-radius:11px;border:1px solid #E7CF9F;background:#FFFBF2;color:#7A4A0B;font:600 13px Vazirmatn,sans-serif;cursor:pointer}
+</style>
+</helmet>
+<div class="cf" style="min-height: 100vh; font-family: Vazirmatn, sans-serif; color: #15181D; background: #F3F1EC">
+  <div style="max-width: 1360px; margin: 0 auto; padding: 24px 32px 56px; display: flex; flex-direction: column; gap: 26px">
+
+    <a href="ExpertDesk.dc.html" style="display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #5F6672; text-decoration: none; align-self: flex-start">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+      میز کار
+    </a>
+
+    <header class="paper" style="padding: 26px 28px; display: flex; flex-direction: column; gap: 24px">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 24px">
+        <div style="display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; min-width: 0">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
+            <h1 style="margin: 0; font-size: 30px; font-weight: 800">ریرا</h1>
+            <span class="tag t-em">بیمه بدنه</span>
+          </div>
+          <span style="font-size: 15px; color: #5F6672">آقای کاظمی · ۶ روز در تعمیرگاه</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+          <span class="plate" role="img" aria-label="پلاک ۲۳ ب ۴۵۶ ایران ۱۶"><span class="pf"><i></i><i></i><i></i></span><span class="pn">۲۳</span><span class="pl">ب</span><span class="pn">۴۵۶</span><span class="pr"><small>ایران</small>۱۶</span></span>
+          <span class="lbl">پرونده ۱۴۰۵/۴۲۱ · پذیرش ۸۸۲۱۴۵</span>
+        </div>
+      </div>
+      <div class="journey" aria-label="مسیر پرونده">
+        <div class="jstep done"><i></i>پذیرش</div>
+        <div class="jstep done"><i></i>کارشناسی و مجوز</div>
+        <div class="jstep done"><i></i>قطعات</div>
+        <div class="jstep now"><i></i>تعمیر · صافکاری ← نقاشی</div>
+        <div class="jstep"><i></i>کنترل و تحویل</div>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="بخش‌های پرونده">
+      <a href="#" class="on">کار امروز</a><a href="#">کارشناسی</a><a href="#">قطعات</a><a href="#">مدارک</a><a href="#">تاریخچه</a>
+    </nav>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+      <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 24px">
+        <section class="paper" style="padding: 28px; display: flex; flex-direction: column; gap: 20px; border-color: #BFDAD6; background: linear-gradient(180deg, #F3FAF8, #FFFEFB 60%)">
+          <span style="font-size: 12px; font-weight: 700; color: #0E5F66; letter-spacing: .3px">قدم بعدی شما</span>
+          <h2 style="margin: 0; font-size: 24px; font-weight: 800; line-height: 1.5">صافکاری تمام شد. تأیید کنید تا خودرو به نقاشی برود.</h2>
+          <p style="margin: 0; font-size: 15px; color: #5F6672; line-height: 1.9">علی‌رضا (صافکاری · جایگاه ۱) امروز ساعت ۹:۴۰ پایان کار زد. با تأیید شما، کار روی گوشی تکنسین نقاشی ظاهر می‌شود و اجرت صافکاری قطعی می‌شود.</p>
+          <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border-radius: 14px; background: #FFFEFB; border: 1px solid #E6E2D9">
+            <label class="check"><input type="checkbox" checked>کار صافکاری را از نزدیک دیدم</label>
+            <label class="check"><input type="checkbox">قطعهٔ لازم برای نقاشی (گلگیر) رسیده یا در راه است</label>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 12px">
+            <button class="btn" type="button">تأیید و ارجاع به نقاشی<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></button>
+            <button class="btn2" type="button">نیاز به اصلاح دارد</button>
+          </div>
+        </section>
+
+        <section class="paper" style="padding: 24px 28px">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px">
+            <h2 style="margin: 0; font-size: 17px; font-weight: 700">برنامهٔ تعمیر</h2>
+            <a href="#" style="font-size: 13px; font-weight: 600; text-decoration: none">ویرایش برنامه</a>
+          </div>
+          <div class="stn"><span class="num d">۱</span><span>صافکاری · علی‌رضا</span><span class="lbl">۲ روز · تمام شد</span><span style="font-weight: 600">۴٬۵۰۰٬۰۰۰ ریال</span></div>
+          <div class="stn"><span class="num n">۲</span><span style="font-weight: 700">نقاشی · جایگاه ۲</span><span class="lbl">۲ روز · بعدی</span><span style="font-weight: 600">۶٬۰۰۰٬۰۰۰ ریال</span></div>
+          <div class="stn"><span class="num">۳</span><span>جلوبندی</span><span class="lbl">۱ روز · هم‌زمان با نقاشی</span><span style="font-weight: 600">۲٬۰۰۰٬۰۰۰ ریال</span></div>
+          <div class="stn"><span class="num">۴</span><span>کار بیرون: تعمیر صندلی</span><span class="lbl">پیگیری: تأمین قطعه</span><span style="color: #7C828C">—</span></div>
+        </section>
+      </div>
+
+      <aside style="flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 28px">
+        <section class="paper" style="padding: 22px 24px; border-color: #EBD3A4; background: #FFFBF3">
+          <div style="display: flex; gap: 12px; align-items: flex-start">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B26A12" stroke-width="1.9" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="M12 3 2 20h20z"></path><path d="M12 10v4M12 17h.01"></path></svg>
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <span style="font-size: 15px; font-weight: 700; color: #6A3F08">هزینهٔ قطعات از سقف هشدار گذشت</span>
+              <span style="font-size: 13px; color: #7A5A2A; line-height: 1.8">۵۱۲٬۰۰۰٬۰۰۰ ریال از سقف ۵۰۰٬۰۰۰٬۰۰۰ ریال. کار متوقف نمی‌شود؛ فقط وضعیت پیش‌پرداخت را ثبت کنید.</span>
+            </div>
+          </div>
+          <div class="seg3" style="margin-top: 14px; padding-inline-start: 34px">
+            <button type="button">گرفتم</button><button type="button">نگرفتم</button><button type="button">لازم نیست</button>
+          </div>
+        </section>
+
+        <section class="paper sheet" style="padding: 22px 24px">
+          <svg width="26" height="10" viewBox="0 0 26 10" aria-hidden="true" style="position: absolute; top: 12px; left: 16px"><path d="M2 8V3h22v5" fill="none" stroke="#B9BDC4" stroke-width="2" stroke-linecap="round"></path></svg>
+          <h2 style="margin: 0 0 4px; font-size: 17px; font-weight: 700">صورت قطعات</h2>
+          <span class="lbl">از برآورد کارشناس بیمه · ۳ قلم</span>
+          <div class="part">
+            <div style="display: flex; justify-content: space-between; gap: 10px"><span style="font-weight: 600">چراغ جلو راست</span><span class="tag t-ok">تحویل جایگاه</span></div>
+            <span class="lbl">از انبار نمایندگی</span>
+          </div>
+          <div class="part">
+            <div style="display: flex; justify-content: space-between; gap: 10px"><span style="font-weight: 600">گلگیر جلو راست</span><span class="tag t-em">امداد ویژه</span></div>
+            <span style="font-size: 13px; color: #3A4049">درخواست ۴۰۲۷۷۱۳۵ · ثبت ۱۴ آبان</span>
+            <span style="font-size: 13px; color: #1E4A85; display: flex; gap: 6px; align-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"></path><path d="M18 3v4h-4M6 21v-4h4"></path></svg>گزارش امروز ۱۰:۱۵: ارسال از انبار مرکزی</span>
+          </div>
+          <div class="part">
+            <div style="display: flex; justify-content: space-between; gap: 10px"><span style="font-weight: 600">سپر جلو</span><span class="tag t-wait">منتظر مجوز قیمت</span></div>
+            <span style="font-size: 13px; color: #3A4049">بازار ۱۸٬۵۰۰٬۰۰۰ ریال · قیمت شرکت ۱۵٬۲۰۰٬۰۰۰ ریال</span>
+            <a href="#" style="font-size: 13px; font-weight: 600; text-decoration: none">مجوز کارشناس بیمه را ثبت کنید ←</a>
+          </div>
+        </section>
+      </aside>
+    </div>
+    <p style="margin: 0; text-align: center; font-size: 12px; color: #8A8F98">نام‌ها، شماره‌ها و مبالغ نمونه‌اند.</p>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -22,7 +22,7 @@ export default function MyWorkPage() {
       <header className="technician-head">
         <p className="technician-kicker"><span>کارکرد ماه</span><span>{data?.label ?? ''}</span></p>
         <h1>کارکرد من</h1>
-        <p>اجرت هر کار بعد از تأیید تحویل آن توسط مسئول تصادفات حساب می‌شود.</p>
+        <p>اجرت هر کار بعد از تأیید تحویل آن توسط کارشناس تصادفات حساب می‌شود.</p>
       </header>
       <label className="field">
         <span>ماه</span>

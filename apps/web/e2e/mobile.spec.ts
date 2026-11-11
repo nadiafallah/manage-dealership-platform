@@ -10,5 +10,5 @@ test('phone width: login, dashboard and case list fit without horizontal scrolli
     expect(overflow, `horizontal overflow on ${path}`).toBeLessThanOrEqual(1);
   }
   await page.getByRole('button', { name: 'منو' }).click();
-  await expect(page.getByRole('link', { name: 'پرونده‌های تصادفی' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'پرونده‌ها', exact: true })).toBeVisible();
 });

@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { login, openCaseSections } from './helpers';
 
 // Issues #9 and #10 in the browser, on demo case 3 (personal payment): the
-// customer approved the estimate and the expert proposed an advance.
+// customer approved the estimate. Payments are not recorded in Manage any more
+// (spec decision 3); the advance decision is an answer on the cost alert.
 async function openCase3(page: Page, user: string) {
   // Leave the app first: a background request of the old page would otherwise
   // get 401 after the cookies are cleared and redirect, aborting our navigation.
@@ -15,19 +16,15 @@ async function openCase3(page: Page, user: string) {
   await expect(page.getByTestId('finance-panel')).toBeVisible();
 }
 
-test('coordinator collects payment and records customer price approval; parts orders and hands over', async ({
+test('expert records customer price approval; parts orders and hands over', async ({
   page,
 }) => {
   const dialog = page.getByRole('dialog');
-  const gate = page.getByTestId('finance-gate');
 
-  // Unified accident coordinator records the customer's receipt directly.
+  // No payment buttons: the finance panel only explains where the decision is recorded.
   await openCase3(page, 'expert');
-  await page.getByRole('button', {name:'ثبت دریافت از مشتری',exact:true}).click();
-  await dialog.getByLabel('مبلغ دریافتی (ریال) *').fill('21500000');
-  await dialog.getByLabel('شماره پیگیری / رسید پرداخت *').fill('POS-E2E-1');
-  await dialog.getByRole('button',{name:'ثبت',exact:true}).click();
-  await expect(gate).toContainText('پیش‌پرداخت دریافت شده');
+  await expect(page.getByTestId('finance-gate')).toContainText('هشدار هزینه');
+  await expect(page.getByRole('button', { name: 'ثبت دریافت از مشتری', exact: true })).toHaveCount(0);
   // Market purchase: parts quotes, the coordinator records customer consent.
   await openCase3(page, 'parts');
   const currentParts=await (await page.request.get('/api/v1/cases/'+page.url().split('/cases/')[1]+'/parts')).json();
@@ -45,39 +42,40 @@ test('coordinator collects payment and records customer price approval; parts or
   await expect(page.getByText('پاسخ و مرجع تأیید ثبت شد.')).toBeVisible();
   expect(quote.id).toBeTruthy();
 
-  // Parts clerk: order the approved mirror, receive it, hand it over.
+  // Parts clerk, on the single parts list: market purchase, receipt, handover (spec section 7).
   await openCase3(page, 'parts');
   const mirror = page.getByTestId('part').filter({ hasText: 'آینه بغل چپ' });
-  await expect(mirror).toContainText('نیاز ثبت شد');
-  await mirror.getByRole('button', { name: 'سفارش قطعه' }).click();
-  await dialog.getByLabel('تأمین‌کننده', { exact: true }).fill('فروشگاه آزمون');
-  await expect(dialog.getByLabel('قیمت واحد خرید (ریال) *')).toHaveValue('14000000');
-  await dialog.getByRole('button', { name: 'ثبت', exact: true }).click();
-  await expect(mirror).toContainText('سفارش داده شد');
+  await expect(mirror).toContainText('تعیین تکلیف نشده');
+  await mirror.getByRole('button', { name: 'انتخاب مسیر تأمین' }).click();
+  await mirror.getByRole('button', { name: 'خرید بازار', exact: true }).click();
+  await mirror.getByLabel('فروشنده *').fill('فروشگاه آزمون');
+  await mirror.getByLabel('قیمت خرید واحد (ریال) *').fill('14000000');
+  await mirror.getByLabel('قیمت فروش واحد (ریال) *').fill('14000000');
+  await mirror.getByRole('button', { name: 'خرید بازار', exact: true }).last().click();
+  await expect(mirror).toContainText('خرید بازار · در راه');
 
-  await mirror.getByRole('button', { name: 'رسید و کنترل قطعه' }).click();
-  await dialog.getByLabel('شماره رسید انبار').fill('RCV-E2E-1');
-  await dialog.getByRole('button', { name: 'ثبت', exact: true }).click();
-  await expect(mirror).toContainText('رسید و کنترل شد');
+  await mirror.getByRole('button', { name: 'ثبت رسید' }).first().click();
+  await mirror.getByLabel('شمارهٔ رسید (اختیاری)').fill('RCV-E2E-1');
+  await mirror.getByRole('button', { name: 'ثبت رسید' }).last().click();
+  await expect(mirror).toContainText('آمادهٔ تحویل');
 
-  await mirror.getByRole('button', { name: 'تحویل به واحد تعمیر' }).click();
-  await dialog.getByLabel('واحد تعمیر').selectOption({ label: 'مونتاژ و دمونتاژ' });
-  await dialog.getByLabel('تحویل‌گیرنده *').fill('تکنسین آزمون');
-  await dialog.getByRole('button', { name: 'ثبت', exact: true }).click();
-  await expect(mirror).toContainText('تحویل واحد تعمیر');
-  await expect(mirror).toContainText('تکنسین آزمون (مونتاژ و دمونتاژ)');
+  await mirror.getByRole('button', { name: 'تحویل به واحد تعمیر' }).first().click();
+  await mirror.getByLabel('تحویل‌گیرنده *').fill('تکنسین آزمون');
+  await mirror.getByRole('button', { name: 'تحویل به واحد تعمیر' }).last().click();
+  await expect(mirror).toContainText('تحویل‌شده به جایگاه');
+  await expect(mirror).toContainText('تکنسین آزمون');
 
-  // Excel import: preview first, then import all rows of the sample.
+  // Excel import by the expert: preview first, duplicates set aside, then import.
   await openCase3(page,'expert');
-  await page.getByTestId('parts-panel').getByRole('button', { name: 'ورود از اکسل' }).click();
-  await dialog.getByLabel('فایل اکسل (.xlsx)').setInputFiles('public/samples/parts-import-sample.xlsx');
-  await expect(dialog.getByTestId('import-preview')).toContainText('۴ ردیف آماده ورود');
-  await dialog.getByRole('button', { name: 'ورود ۴ ردیف' }).click();
-  await expect(page.getByTestId('part')).toHaveCount(5);
-  await expect(page.getByTestId('parts-panel')).toContainText('آرم صندوق');
+  const ledger = page.getByTestId('parts-ledger');
+  await ledger.getByRole('button', { name: 'ورود از اکسل' }).click();
+  await ledger.getByLabel('فایل اکسل (.xlsx)').setInputFiles('public/samples/parts-import-sample.xlsx');
+  await expect(ledger.getByTestId('import-preview')).toContainText('۴ قلم تازه');
+  await ledger.getByRole('button', { name: 'تأیید و ورود' }).click();
+  await expect(ledger.getByTestId('part')).toHaveCount(5);
+  await expect(ledger).toContainText('آرم صندوق');
 
   // History (not visible to the parts clerk) records every step with its actor.
   await openCase3(page, 'manager');
   await expect(page.locator('.timeline')).toContainText('تحویل قطعه به واحد تعمیر');
-  await expect(page.locator('.timeline')).toContainText('ثبت دریافت تسویه');
 });

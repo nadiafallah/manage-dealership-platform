@@ -37,7 +37,7 @@ const amountText = (n: number | null) => (n === null ? '' : String(n));
 const amountOrNull = (s: string) => (s.trim() === '' ? null : parseAmount(s));
 
 export function FinancePanel({ kase, onChange }: { kase: CaseDetail; onChange: () => void }) {
-  const { can, me } = useAuth();
+  const { can } = useAuth();
   const toast = useToast();
   const { data: f, mutate } = useSWR<CaseFinance>(`/cases/${kase.id}/finance`, fetcher);
   const [mode, setMode] = useState<Mode>(null);
@@ -139,29 +139,17 @@ export function FinancePanel({ kase, onChange }: { kase: CaseDetail; onChange: (
     <section className="panel" data-testid="finance-panel">
       <div className="panel-head">
         <h2>مالی و پیش‌پرداخت</h2>
-        {editable && (can('finance.propose') || (can('finance.payment') && !!f.balanceRial)) && (
+        {editable && can('finance.propose') && (
           <div className="row" style={{ gap: 6 }}>
-            {can('finance.payment') && !!f.balanceRial && (
-              <button className="btn btn-sm" onClick={() => open({ kind: 'settle' })}>
-                ثبت دریافت از مشتری
-              </button>
-            )}
-            {can('finance.propose') && (
-              <>
-                <button className="btn btn-sm" onClick={() => open({ kind: 'shares' })}>
-                  سهم پرداخت‌کنندگان
-                </button>
-                <button className="btn btn-sm" onClick={() => open({ kind: 'propose' })}>
-                  پیشنهاد مالی
-                </button>
-              </>
-            )}
+            <button className="btn btn-sm" onClick={() => open({ kind: 'shares' })}>
+              سهم پرداخت‌کنندگان
+            </button>
           </div>
         )}
       </div>
       <div className="panel-body stack" style={{ gap: 10 }}>
-        <div className={`callout ${f.gate.open ? 'callout-blue' : 'callout-amber'} small`} data-testid="finance-gate">
-          {f.gate.message}
+        <div className="callout callout-blue small" data-testid="finance-gate">
+          تصمیم پیش‌پرداخت روی هشدار هزینهٔ همین پرونده ثبت می‌شود و هیچ کاری را متوقف نمی‌کند. فاکتور رسمی و دریافت وجه در سامانهٔ حسابداری ثبت می‌شود.
         </div>
         <dl className="dl">
           <dt>برآورد کارشناسی</dt>
@@ -192,7 +180,6 @@ export function FinancePanel({ kase, onChange }: { kase: CaseDetail; onChange: (
         </dl>
 
         {f.approvals.map((a) => {
-          const own = a.proposedBy.id === me.id;
           return (
             <div key={a.id} className="finance-item" data-testid="finance-approval">
               <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -201,28 +188,7 @@ export function FinancePanel({ kase, onChange }: { kase: CaseDetail; onChange: (
                   <span className="num">{rial(a.amountRial)}</span>
                   <span className={`chip ${STATUS_TONE[a.status]}`}>{FINANCE_APPROVAL_STATUS_LABELS[a.status]}</span>
                 </div>
-                {editable && (
-                  <div className="row" style={{ gap: 6 }}>
-                    {a.status === 'proposed' && can('finance.approve') && !own && (
-                      <>
-                        <button className="btn btn-sm btn-primary" onClick={() => open({ kind: 'decide', a, decision: 'approve' })}>
-                          تأیید مدیر
-                        </button>
-                        <button className="btn btn-sm" onClick={() => open({ kind: 'decide', a, decision: 'reject' })}>
-                          رد
-                        </button>
-                      </>
-                    )}
-                    {a.status === 'proposed' && can('finance.approve') && own && (
-                      <span className="xs muted">پیشنهاد خودتان — مدیر دیگری باید تأیید کند</span>
-                    )}
-                    {a.status === 'approved' && a.kind === 'advance' && can('finance.payment') && (
-                      <button className="btn btn-sm btn-primary" onClick={() => open({ kind: 'pay', a })}>
-                        تأیید دریافت
-                      </button>
-                    )}
-                  </div>
-                )}
+                <span className="xs muted">سابقهٔ روال قبلی (فقط خواندنی)</span>
               </div>
               <div className="xs muted meta">
                 <span>

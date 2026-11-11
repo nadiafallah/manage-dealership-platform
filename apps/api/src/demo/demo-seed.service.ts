@@ -8,27 +8,28 @@ import { AssessmentsService } from '../assessments/assessments.service';
 import { hashPassword } from '../auth/password';
 import type { Actor } from '../auth/auth.types';
 import { BlockersService } from '../blockers/blockers.service';
-import { FinanceService } from '../finance/finance.service';
 import { PartsService } from '../parts/parts.service';
 import { CasesService } from '../cases/cases.service';
 import { CompletionService } from '../completion/completion.service';
 import { APP_CONFIG, type AppConfig } from '../config';
 import { newId } from '../common/ids';
 import { DATABASE, type DatabaseHandle } from '../db/database';
-import { departments, tenants, users } from '../db/schema';
+import { departments, tenants, users, workshopStations } from '../db/schema';
+import { RemindersService } from '../people/reminders.service';
+import { seedFleet } from './demo-fleet';
 import { TasksService } from '../tasks/tasks.service';
 
 export const DEMO_TENANT_CODE = 'demo';
 export const CREDENTIALS_FILE = resolve(__dirname, '../../.data/demo-credentials.local.txt');
 
 const DEMO_USERS: { username: string; displayName: string; roles: Role[] }[] = [
-  { username:'technician',displayName:'تعمیرکار نمونه',roles:['technician'] },
-  { username: 'expert', displayName: 'کارشناس نمونه', roles: ['accident_expert'] },
-  { username: 'supervisor', displayName: 'سرپرست نمونه', roles: ['accident_supervisor'] },
+  { username:'technician',displayName:'تکنسین نمونه',roles:['technician'] },
+  { username: 'expert', displayName: 'کارشناس تصادفات نمونه', roles: ['accident_expert'] },
+  // A second and third accident expert: the specification has several experts on one desk.
+  { username: 'supervisor', displayName: 'کارشناس تصادفات نمونهٔ دوم', roles: ['accident_expert'] },
   { username: 'manager', displayName: 'مدیر خدمات نمونه', roles: ['service_manager'] },
-  { username: 'parts', displayName: 'کاربر قطعات نمونه', roles: ['parts_clerk'] },
-  { username: 'cashier', displayName: 'کاربر صندوق نمونه', roles: ['cashier'] },
-  { username: 'qc', displayName: 'کنترل کیفیت نمونه', roles: ['qc_inspector'] },
+  { username: 'parts', displayName: 'مسئول قطعات نمونه', roles: ['parts_clerk'] },
+  { username: 'qc', displayName: 'کارشناس تصادفات نمونهٔ سوم', roles: ['accident_expert'] },
   { username: 'admin', displayName: 'مدیر سیستم نمونه', roles: ['system_admin'] },
 ];
 
@@ -55,8 +56,8 @@ export class DemoSeedService {
     private readonly blockers: BlockersService,
     private readonly assessments: AssessmentsService,
     private readonly parts: PartsService,
-    private readonly finance: FinanceService,
     private readonly completion: CompletionService,
+    private readonly reminders: RemindersService,
   ) {}
 
   async isSeeded(): Promise<boolean> {
@@ -65,7 +66,8 @@ export class DemoSeedService {
   }
 
   /** Returns the password used for every demo account. */
-  async seed(opts: { password?: string; withCases?: boolean } = {}): Promise<string> {
+  /** fleet: the ~20-car demo of package 8 (default from DEMO_FLEET; tests that count the five base cases turn it off). */
+  async seed(opts: { password?: string; withCases?: boolean; fleet?: boolean } = {}): Promise<string> {
     const db = this.handle.db;
     const password = opts.password || this.cfg.SEED_DEMO_PASSWORD || randomBytes(9).toString('base64url');
     const passwordHash = await hashPassword(password);
@@ -97,6 +99,7 @@ export class DemoSeedService {
     });
 
     if (opts.withCases !== false) await this.seedCases(tenantId);
+    if (opts.withCases !== false && (opts.fleet ?? this.cfg.DEMO_FLEET) !== false) await this.seedFleetCars(tenantId, passwordHash);
     return password;
   }
 
@@ -143,6 +146,44 @@ export class DemoSeedService {
       },
       requestId: 'demo-seed',
     };
+  }
+
+  /** Bays, three bay technicians and fifteen more cars (demo-fleet.ts). */
+  private async seedFleetCars(tenantId: string, passwordHash: string): Promise<void> {
+    const db = this.handle.db;
+    const depts = await db.select().from(departments).where(eq(departments.tenantId, tenantId));
+    const dept = (code: string) => depts.find((d) => d.code === code)!.id;
+    const techs = [
+      { username: 'tech-body', displayName: 'صافکار نمونه', code: 'B' },
+      { username: 'tech-paint', displayName: 'نقاش نمونه', code: 'P' },
+      { username: 'tech-front', displayName: 'جلوبند نمونه', code: 'S' },
+    ];
+    await db.insert(users).values(techs.map((t) => ({ id: newId(), tenantId, username: t.username, displayName: t.displayName, passwordHash, roles: ['technician'], isTest: true })));
+    const bays = [
+      { code: 'B1', name: 'صافکاری ۱', trade: 'body', dept: 'body' },
+      { code: 'B2', name: 'صافکاری ۲', trade: 'body', dept: 'body' },
+      { code: 'P1', name: 'نقاشی', trade: 'paint', dept: 'paint' },
+      { code: 'S1', name: 'جلوبندی', trade: 'suspension', dept: 'suspension' },
+      { code: 'M1', name: 'مکانیک', trade: 'mechanical', dept: 'mechanical' },
+    ];
+    const existing = await db.select().from(workshopStations).where(eq(workshopStations.tenantId, tenantId));
+    const missing = bays.filter((b) => !existing.some((e) => e.code === b.code));
+    if (missing.length) await db.insert(workshopStations).values(missing.map((b) => ({ id: newId(), tenantId, departmentId: dept(b.dept), code: b.code, name: b.name, trade: b.trade, isTest: true })));
+    const stations = await db.select().from(workshopStations).where(eq(workshopStations.tenantId, tenantId));
+    const n = await seedFleet(
+      {
+        expert: await this.actorFor(tenantId, 'expert'),
+        expert2: await this.actorFor(tenantId, 'supervisor'),
+        expert3: await this.actorFor(tenantId, 'qc'),
+        parts: await this.actorFor(tenantId, 'parts'),
+        techBody: await this.actorFor(tenantId, 'tech-body'),
+        techPaint: await this.actorFor(tenantId, 'tech-paint'),
+        techFront: await this.actorFor(tenantId, 'tech-front'),
+      },
+      { cases: this.cases, tasks: this.tasks, parts: this.parts, blockers: this.blockers, reminders: this.reminders },
+      { dept, station: (code) => stations.find((x) => x.code === code)!.id },
+    );
+    this.logger.log(`Demo fleet: ${n} more synthetic cars`);
   }
 
   private async seedCases(tenantId: string): Promise<void> {
@@ -298,7 +339,8 @@ export class DemoSeedService {
     });
 
     // 3. Personal payment, received today; contact details still unknown. The
-    // customer approved the estimate; parts wait for the advance payment.
+    // customer approved the estimate; the advance decision is the expert's
+    // answer on the cost alert (spec section 9), nothing waits for it.
     const c3 = await this.cases.create(expert, {
       customer: { fullName: 'مشتری نمونه سه' },
       vehicle: { brand: 'ایران‌خودرو', model: 'تارا', plate: '۳۳ د ۳۳۳ - ۳۰' },
@@ -343,11 +385,6 @@ export class DemoSeedService {
       rejectedItemIds: [],
     });
     await this.parts.fromAssessment(expert, c3.id, { source: 'external' });
-    await this.finance.propose(expert, c3.id, {
-      kind: 'advance',
-      amountRial: 15_000_000,
-      reason: 'پیش‌پرداخت قطعه و نیمی از اجرت',
-    });
 
     // 4. Vehicle already in the workshop before Manage: legacy entry, overdue.
     const c4 = await this.cases.create(expert, {

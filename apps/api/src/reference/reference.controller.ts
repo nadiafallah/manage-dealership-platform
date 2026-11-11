@@ -31,7 +31,7 @@ export class ReferenceController {
         and(
           eq(users.tenantId, actor.user.tenantId),
           eq(users.isActive, true),
-          sql`${users.roles} && array['accident_expert','accident_supervisor','accident_coordinator','system_admin']::text[]`,
+          sql`${users.roles} && array['accident_expert','system_admin']::text[]`,
         ),
       )
       .orderBy(asc(users.displayName));

@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { partDiscrepancies, partRequests, tenants, users } from '../src/db/schema';
 import { newId } from '../src/common/ids';
 import { hashPassword } from '../src/auth/password';
-import { Client, createHarness, daysAgo, TEST_PASSWORD, type Harness } from './harness';
+import { Client, LEGACY_QC_PERMISSIONS, createHarness, daysAgo, TEST_PASSWORD, type Harness } from './harness';
 
 // Parts discrepancy queue (#11): rules flag contradicting records once per
 // condition; only a person closes an item, with a reason and history.
@@ -39,7 +39,7 @@ const queue = async (who: Client = parts, query = ''): Promise<PartDiscrepancy[]
 
 beforeAll(async () => {
   h = await createHarness();
-  [expert, supervisor, manager, parts, qc] = await Promise.all(['expert', 'supervisor', 'manager', 'parts', 'qc'].map((u) => h.login(u)));
+  [expert, supervisor, manager, parts, qc] = await Promise.all([...['expert', 'supervisor', 'manager', 'parts'].map((u) => h.login(u)), h.loginAs('narrow', [], LEGACY_QC_PERMISSIONS)]);
   depts = (await supervisor.get('/departments')).body;
 });
 afterAll(async () => {

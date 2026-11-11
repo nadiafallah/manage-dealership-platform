@@ -72,7 +72,7 @@ export default function PeopleReportsPage() {
 
       {can('report.manager') && (
         <section className="panel" aria-label="مسئولیت پرونده‌ها">
-          <div className="panel-head"><div><h2>سهم هر مسئول تصادفات</h2><p className="muted small">روزهای مسئولیت، کارهای تأییدشده و تحویل‌ها در دورهٔ مسئولیت هر نفر؛ با انتقال پرونده، سهم هر نفر جدا حساب می‌شود.</p></div></div>
+          <div className="panel-head"><div><h2>سهم هر کارشناس تصادفات</h2><p className="muted small">روزهای مسئولیت، کارهای تأییدشده و تحویل‌ها در دورهٔ مسئولیت هر نفر؛ با انتقال پرونده، سهم هر نفر جدا حساب می‌شود.</p></div></div>
           <div className="panel-body">
             {dutyError && <p role="alert" className="callout callout-red">{errorMessage(dutyError)}</p>}
             {duty && !duty.rows.length && <p className="muted">در {duty.label} پرونده‌ای با مسئول ثبت‌شده نیست.</p>}

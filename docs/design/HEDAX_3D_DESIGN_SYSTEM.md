@@ -1,6 +1,8 @@
+> **Superseded (package 6, 2026-11-10):** the Signature theme and the `?ui=classic` switch were removed. The current design system is [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md); this file is kept as history.
+
 # HEDAX Signature Spatial System — design system
 
-Source of truth: [`apps/web/app/signature.css`](../../apps/web/app/signature.css). Every rule is scoped to `html[data-ui="signature"]` inside `@media screen`.
+Source of truth: `apps/web/app/signature.css` (removed). Every rule is scoped to `html[data-ui="signature"]` inside `@media screen`.
 
 ## 1. Material ladder
 

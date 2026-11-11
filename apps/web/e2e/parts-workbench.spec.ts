@@ -5,6 +5,9 @@ test('parts workbench opens by default and keeps legacy queues usable at 390px',
   await page.setViewportSize({ width: 1440, height: 900 });
   await login(page, 'parts');
   await page.goto('/accidents/parts');
+  await expect(page.getByRole('heading', { name: 'میز قطعات', level: 1 })).toBeVisible();
+  // The cross-car planning board of the Manage advisor sits under the parts desk.
+  await page.getByText('برنامه‌ریزی گروهی قطعات همهٔ خودروها با دستیار منیج', { exact: true }).click();
   await expect(page.getByRole('heading', { name: /امروز .* کار با شماست/ })).toBeVisible();
   await expect(page.getByRole('link', { name: 'بارگذاری گزارش امداد ویژهٔ امروز' })).toHaveAttribute('href', '/daily-reports?kind=emdad');
   await expect(page.getByText('منتظر تصمیم شما', { exact: true })).toBeVisible();
@@ -46,6 +49,7 @@ test('Manage creates a group plan but requires an independent decision for each 
     if (request.method() === 'POST' && (endpoint.startsWith('/api/v1/parts/') || endpoint.startsWith('/api/v1/workshop/parts/'))) writes.push(request.url());
   });
   await page.goto('/accidents/parts');
+  await page.getByText('برنامه‌ریزی گروهی قطعات همهٔ خودروها با دستیار منیج', { exact: true }).click();
   const planButton = page.getByRole('button', {name: 'برنامه‌ریزی همهٔ قطعات این خودرو با منیج'});
   await expect(planButton).toBeVisible();
   await planButton.click();

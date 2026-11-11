@@ -12,7 +12,7 @@ import {
   type Task,
   type TimelineEvent,
 } from '@manage/shared';
-import { Client, createHarness, daysAgo, type Harness } from './harness';
+import { Client, LEGACY_QC_PERMISSIONS, createHarness, LEGACY_CASHIER_PERMISSIONS, daysAgo, type Harness } from './harness';
 
 // Issue #12: QC with corrective work, technical and financial close as two
 // independent gates, settlement payment and handover (acceptance scenario 9).
@@ -133,9 +133,11 @@ beforeAll(async () => {
   h = await createHarness();
   // This fixture exercises the legacy financial decision path with an explicit grant.
   await h.db.db.update(users).set({permissionOverrides:{allow:['finance.approve','finance.close','finance.propose'],deny:[]}}).where(eq(users.username,'manager'));
-  [expert, supervisor, manager, parts, cashier, qc] = await Promise.all(
-    ['expert', 'supervisor', 'manager', 'parts', 'cashier', 'qc'].map((u) => h.login(u)),
-  );
+  [expert, supervisor, manager, parts, cashier, qc] = await Promise.all([
+    ...['expert', 'supervisor', 'manager', 'parts'].map((u) => h.login(u)),
+    h.loginAs('payments', [], LEGACY_CASHIER_PERMISSIONS),
+    h.loginAs('narrow', [], LEGACY_QC_PERMISSIONS),
+  ]);
   depts = (await supervisor.get('/departments')).body;
 });
 
@@ -201,24 +203,15 @@ describe('acceptance 9: QC, corrective work, settlement, delivery', () => {
     expect((await caseOf(c.id)).stage).toBe('ready_for_delivery');
     expect(state.deliveryIssues.map((i) => i.code)).toEqual(['financial_not_closed']);
 
-    // Settlement: the customer owes the full approved estimate (11 M Rial).
+    // Financial close (spec decision 3): the invoice and payments are in the accounting
+    // system, so the customer balance no longer blocks; payments are not recorded here.
     kase = await caseOf(c.id);
-    let fin = await cashier.post(`/cases/${c.id}/financial-close`, { expectedVersion: kase.version });
-    expect(fin.body.code).toBe('FINANCIAL_CLOSE_BLOCKED');
-    expect(fin.body.details.issues).toEqual([expect.objectContaining({ code: 'balance_due', amountRial: 11_000_000 })]);
     const handover = { recipientName: 'مشتری آزمون تحویل', recipientRelation: 'owner', handoverConfirmed: true };
     const tooEarly = await expert.post(`/cases/${c.id}/delivery`, { expectedVersion: kase.version, ...handover });
     expect(tooEarly.body.code).toBe('DELIVERY_GATE');
-
-    const over = await cashier.post(`/cases/${c.id}/finance/payments`, { amountRial: 12_000_000, paymentRef: 'RCPT-TEST-1' });
-    expect(over.body.code).toBe('PAYMENT_EXCEEDS_BALANCE');
-    expect((await parts.post(`/cases/${c.id}/finance/payments`, { amountRial: 1, paymentRef: 'x' })).status).toBe(403);
-    const paid = await cashier.post(`/cases/${c.id}/finance/payments`, { amountRial: 11_000_000, paymentRef: 'RCPT-TEST-1' });
-    expect(paid.status).toBe(201);
-    expect(paid.body as CaseFinance).toMatchObject({ paidRial: 11_000_000, balanceRial: 0 });
-    expect((paid.body as CaseFinance).payments[0]).toMatchObject({ paymentRef: 'RCPT-TEST-1', recordedBy: { displayName: 'کاربر صندوق نمونه' } });
-
-    fin = await cashier.post(`/cases/${c.id}/financial-close`, { expectedVersion: kase.version });
+    expect((await cashier.post(`/cases/${c.id}/finance/payments`, { amountRial: 11_000_000, paymentRef: 'RCPT-TEST-1' })).body.code).toBe('FINANCE_FLOW_RETIRED');
+    expect((await parts.post(`/cases/${c.id}/financial-close`, { expectedVersion: kase.version })).status).toBe(403);
+    const fin = await cashier.post(`/cases/${c.id}/financial-close`, { expectedVersion: kase.version });
     expect(fin.status).toBe(201);
     state = fin.body;
     expect(state.financial).toMatchObject({ valid: true, waivedRial: 0 });
@@ -252,7 +245,7 @@ describe('acceptance 9: QC, corrective work, settlement, delivery', () => {
 
     const timeline = (await supervisor.get(`/cases/${c.id}/timeline`)).body as TimelineEvent[];
     const actions = timeline.map((e) => e.action);
-    for (const a of ['qc.recorded', 'case.technical_closed', 'finance.payment_recorded', 'case.financial_closed', 'case.delivered']) {
+    for (const a of ['qc.recorded', 'case.technical_closed', 'case.financial_closed', 'case.delivered']) {
       expect(actions).toContain(a);
     }
   });
@@ -293,7 +286,7 @@ describe('acceptance 9: QC, corrective work, settlement, delivery', () => {
     expect((await recordQc(c.id)).status).toBe(201);
     await closeTechnically(c.id);
 
-    // A recorded customer share changes the settlement: the financial close must be repeated.
+    // Payer shares are information only now: changing them keeps the financial close.
     const shares = await expert.put(`/cases/${c.id}/finance/shares`, {
       customerShareRial: 2_000_000,
       insurerShareRial: null,
@@ -302,11 +295,11 @@ describe('acceptance 9: QC, corrective work, settlement, delivery', () => {
     });
     expect(shares.status).toBe(200);
     state = await completionOf(c.id);
-    expect(state.financial.valid).toBe(false);
-    expect(state.deliveryIssues.map((i) => i.code)).toEqual(['financial_not_closed']);
+    expect(state.financial.valid).toBe(true);
+    expect(state.deliveryIssues).toEqual([]);
   });
 
-  it('customer balance release uses coordinator release authority and a reason', async () => {
+  it('a personal case closes financially without a settlement in Manage (spec decision 3)', async () => {
     const c = await newCase({ coverageType: 'personal' });
     await authorized(c.id, 'customer');
     await installPart(c.id);
@@ -314,16 +307,10 @@ describe('acceptance 9: QC, corrective work, settlement, delivery', () => {
     expect((await recordQc(c.id)).status).toBe(201);
     await closeTechnically(c.id);
     const v = (await caseOf(c.id)).version;
-
-    expect((await cashier.post(`/cases/${c.id}/financial-close`, { expectedVersion: v, waiveBalance: true, note: 'اعتبار' })).status).toBe(403);
     expect((await manager.post(`/cases/${c.id}/financial-close`, { expectedVersion: v, waiveBalance: true })).status).toBe(400);
-    const res = await expert.post(`/cases/${c.id}/financial-close`, {
-      expectedVersion: v,
-      waiveBalance: true,
-      note: 'مشتری اعتباری؛ تسویه در پایان ماه',
-    });
+    const res = await expert.post(`/cases/${c.id}/financial-close`, { expectedVersion: v, note: 'فاکتور در سامانهٔ حسابداری صادر شد' });
     expect(res.status).toBe(201);
-    expect((res.body as CaseCompletion).financial).toMatchObject({ valid: true, waivedRial: 11_000_000 });
+    expect((res.body as CaseCompletion).financial).toMatchObject({ valid: true, waivedRial: 0 });
     expect((await financeOf(c.id)).balanceRial).toBe(11_000_000);
     expect((res.body as CaseCompletion).deliveryIssues).toEqual([]);
   });

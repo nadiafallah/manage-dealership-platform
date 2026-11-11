@@ -12,14 +12,15 @@ type Response = keyof typeof ALERT_RESPONSE_LABELS;
 const RESPONSES: Response[] = ['received', 'not_received', 'not_needed'];
 
 function question(a: CaseAlert): { title: string; detail: string } {
-  if (a.kind === 'advance') {
-    return a.level > 1
-      ? { title: 'هزینه بالا رفته؛ پیش‌پرداخت تازه گرفته شد؟', detail: 'الحاقیه مبلغ پرونده را بیشتر کرده است.' }
-      : { title: 'پیش‌پرداخت از مشتری گرفته شده؟', detail: 'سهم مشتری دارد و پیش‌پرداختی ثبت نشده است. کار متوقف نمی‌شود؛ تصمیم با شماست.' };
+  if (a.kind === 'expensive_part') {
+    return {
+      title: `قطعهٔ گران: ${a.partDescription ?? 'قطعه'} (${faNum(a.totalRial ?? 0)} ریال)`,
+      detail: 'خودروی شخصی است. پیش‌پرداخت از مشتری گرفته شده؟ کار متوقف نمی‌شود؛ فقط تصمیم شما ثبت می‌شود.',
+    };
   }
   return {
-    title: `مبلغ قطعات به ${faNum(a.totalRial ?? 0)} ریال رسید`,
-    detail: `از آستانهٔ ${faNum(a.thresholdRial ?? 0)} ریال گذشته است. پیش‌پرداخت از مشتری، بیمه یا کارت طلایی گرفته شده؟`,
+    title: `هزینهٔ قطعات به ${faNum(a.totalRial ?? 0)} ریال رسید`,
+    detail: `از سقف ${faNum(a.thresholdRial ?? 0)} ریال گذشته است. پیش‌پرداخت از مشتری، بیمه یا کارت طلایی گرفته شده؟`,
   };
 }
 
@@ -52,10 +53,10 @@ export function AlertsPanel({ caseId, onAnswered }: { caseId?: string; onAnswere
   }
 
   return (
-    <section className="panel" aria-labelledby="alerts-title">
+    <section className={`panel${caseId ? ' cf-alert' : ''}`} aria-labelledby="alerts-title">
       <div className="panel-head">
         <div>
-          <h2 id="alerts-title">هشدارها</h2>
+          <h2 id="alerts-title">{caseId ? 'هشدار هزینهٔ قطعات' : 'هشدارها'}</h2>
           <p className="muted small">{faNum(data.length)} مورد منتظر جواب شما؛ هیچ‌کدام کار را متوقف نمی‌کند.</p>
         </div>
       </div>
@@ -96,23 +97,42 @@ export function AlertsPanel({ caseId, onAnswered }: { caseId?: string; onAnswere
   );
 }
 
-/** Owner / system administrator: the parts-amount alert threshold in Rial. */
+type AlertSettingsView = { partsAlertThresholdRial: number; expensivePartThresholdRial: number; emdadLateDays: number; defaults: { partsAlertThresholdRial: number; expensivePartThresholdRial: number; emdadLateDays: number } };
+
+/** One setting with large up/down controls (spec section 9: «کنترل بالا/پایین»). */
+function Stepper({ label, hint, value, step, min, unit, onChange }: { label: string; hint: string; value: number; step: number; min: number; unit: string; onChange: (v: number) => void }) {
+  return (
+    <div className="field" style={{ flex: '1 1 260px' }}>
+      <span>{label}</span>
+      <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+        <button type="button" className="btn" aria-label={`کم کردن ${label}`} disabled={value - step < min} onClick={() => onChange(value - step)} style={{ minWidth: 44, minHeight: 44 }}>−</button>
+        <output className="num" style={{ minWidth: 150, textAlign: 'center', fontWeight: 700 }}>{faNum(value)} {unit}</output>
+        <button type="button" className="btn" aria-label={`افزودن ${label}`} onClick={() => onChange(value + step)} style={{ minWidth: 44, minHeight: 44 }}>+</button>
+      </div>
+      <small className="muted">{hint}</small>
+    </div>
+  );
+}
+
+/** System administrator and owner: cost alert thresholds and the late-Emdad days. */
 export function AlertSettingsPanel() {
   const { can } = useAuth();
-  const { data, mutate } = useSWR<{ partsAlertThresholdRial: number; defaultRial: number }>(can('settings.manage') ? '/settings/alerts' : null, fetcher);
-  const [value, setValue] = useState(''), [message, setMessage] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const { data, mutate } = useSWR<AlertSettingsView>(can('settings.manage') ? '/settings/alerts' : null, fetcher);
+  const [draft, setDraft] = useState<Partial<AlertSettingsView>>({});
+  const [message, setMessage] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   if (!can('settings.manage') || !data) return null;
+  const v = { ...data, ...draft };
+  const changed = v.partsAlertThresholdRial !== data.partsAlertThresholdRial || v.expensivePartThresholdRial !== data.expensivePartThresholdRial || v.emdadLateDays !== data.emdadLateDays;
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    const digits = (value || String(data!.partsAlertThresholdRial)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0)).replace(/[^0-9]/g, '');
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      await api('/settings/alerts', { method: 'PUT', body: { partsAlertThresholdRial: Number(digits) } });
+      await api('/settings/alerts', { method: 'PUT', body: { partsAlertThresholdRial: v.partsAlertThresholdRial, expensivePartThresholdRial: v.expensivePartThresholdRial, emdadLateDays: v.emdadLateDays } });
       await mutate();
-      setValue('');
-      setMessage('آستانهٔ هشدار ذخیره شد.');
+      setDraft({});
+      setMessage('سقف‌ها ذخیره شد.');
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -120,23 +140,23 @@ export function AlertSettingsPanel() {
     }
   }
   return (
-    <section className="panel">
+    <section className="panel" aria-labelledby="alert-settings-title">
       <div className="panel-head">
         <div>
-          <h2>هشدار مبلغ قطعات</h2>
-          <p className="muted small">وقتی جمع قطعات یک پرونده از این مبلغ بگذرد، از مسئول تصادفات دربارهٔ پیش‌پرداخت پرسیده می‌شود. هر مضرب تازه دوباره می‌پرسد.</p>
+          <h2 id="alert-settings-title">سقف‌ها و آستانه‌های هشدار</h2>
+          <p className="muted small">همهٔ مبالغ به ریال است. هیچ هشداری کار را قفل نمی‌کند؛ فقط از کارشناس تصادفات دربارهٔ پیش‌پرداخت پرسیده و جوابش ثبت می‌شود.</p>
         </div>
       </div>
-      <form className="panel-body" onSubmit={save} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
-        <label className="field" style={{ flex: '1 1 240px' }}>
-          آستانه (ریال) — اکنون {faNum(data.partsAlertThresholdRial)}
-          <input className="input" inputMode="numeric" dir="ltr" value={value} onChange={(e) => setValue(e.target.value)} placeholder={String(data.partsAlertThresholdRial)} />
-        </label>
-        <button type="submit" className="btn btn-primary" disabled={busy}>
-          {busy ? 'در حال ذخیره…' : 'ذخیره'}
-        </button>
-        {message && <p role="status" className="small" style={{ margin: 0 }}>{message}</p>}
-        {error && <p role="alert" className="callout callout-red" style={{ margin: 0 }}>{error}</p>}
+      <form className="panel-body" onSubmit={save} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 16 }}>
+        <Stepper label="سقف هزینهٔ قطعات هر پرونده" unit="ریال" step={100_000_000} min={100_000_000} value={v.partsAlertThresholdRial} onChange={(n) => setDraft((d) => ({ ...d, partsAlertThresholdRial: n }))} hint={`پیش‌فرض ${faNum(data.defaults.partsAlertThresholdRial)} ریال؛ هر مضرب تازه دوباره می‌پرسد.`} />
+        <Stepper label="قطعهٔ گران در خودروی شخصی" unit="ریال" step={50_000_000} min={50_000_000} value={v.expensivePartThresholdRial} onChange={(n) => setDraft((d) => ({ ...d, expensivePartThresholdRial: n }))} hint={`پیش‌فرض ${faNum(data.defaults.expensivePartThresholdRial)} ریال برای یک قلم (قیمت × تعداد).`} />
+        <Stepper label="امداد ویژهٔ دیرشده بعد از" unit="روز" step={1} min={1} value={v.emdadLateDays} onChange={(n) => setDraft((d) => ({ ...d, emdadLateDays: n }))} hint={`پیش‌فرض ${faNum(data.defaults.emdadLateDays)} روز بدون تغییر در گزارش روزانه.`} />
+        <div className="row" style={{ gap: 8, alignItems: 'center', flexBasis: '100%' }}>
+          <button type="submit" className="btn btn-primary" disabled={busy || !changed}>{busy ? 'در حال ذخیره…' : 'ذخیره'}</button>
+          {changed && <button type="button" className="btn" onClick={() => setDraft({})}>برگرداندن</button>}
+          {message && <p role="status" className="small" style={{ margin: 0 }}>{message}</p>}
+          {error && <p role="alert" className="callout callout-red" style={{ margin: 0 }}>{error}</p>}
+        </div>
       </form>
     </section>
   );

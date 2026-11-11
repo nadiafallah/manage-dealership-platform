@@ -1,18 +1,41 @@
 // Domain vocabulary. Values are stable identifiers stored in the database and
 // used in the API; Persian display labels live in labels.ts.
 
+// Five role codes plus the owner flag on the account = the six roles of the
+// product specification (docs/PRODUCT_SPEC_FA.md, section 3).
 export const ROLES = [
-  'accident_coordinator', // Unified accident responsibility; legacy roles remain readable.
-  'technician',
-  'accident_expert', // کارشناس تصادفات
-  'accident_supervisor', // مسئول پیگیری / سرپرست تصادفات
-  'service_manager', // مدیر خدمات
-  'parts_clerk', // قطعات
-  'cashier', // مالی / صندوق
-  'qc_inspector', // کنترل کیفیت
+  'accident_expert', // کارشناس تصادفات (several people)
+  'parts_clerk', // مسئول قطعات
+  'technician', // تکنسین جایگاه
+  'service_manager', // مدیر خدمات — view, analyse, remind only
   'system_admin', // مدیر سیستم
 ] as const;
 export type Role = (typeof ROLES)[number];
+
+/**
+ * Role codes retired by migration 0020. accident_coordinator, accident_supervisor
+ * and qc_inspector became accident_expert; cashier has no successor (its work
+ * moved to the accident expert and the account is deactivated if nothing remains).
+ */
+export const LEGACY_ROLE_SUCCESSORS: Readonly<Record<string, Role | null>> = {
+  accident_coordinator: 'accident_expert',
+  accident_supervisor: 'accident_expert',
+  qc_inspector: 'accident_expert',
+  cashier: null,
+};
+
+/** Current roles of a stored role list: legacy codes mapped, unknown codes dropped, order of ROLES, no duplicates. */
+export function normalizeRoles(raw: readonly string[] | null | undefined): Role[] {
+  const out = new Set<Role>();
+  for (const r of raw ?? []) {
+    if ((ROLES as readonly string[]).includes(r)) out.add(r as Role);
+    else if (Object.prototype.hasOwnProperty.call(LEGACY_ROLE_SUCCESSORS, r)) {
+      const next = LEGACY_ROLE_SUCCESSORS[r];
+      if (next) out.add(next);
+    }
+  }
+  return ROLES.filter((r) => out.has(r));
+}
 
 export const COVERAGE_TYPES = ['golden_card', 'insurance', 'personal', 'mixed', 'unknown'] as const;
 export type CoverageType = (typeof COVERAGE_TYPES)[number];

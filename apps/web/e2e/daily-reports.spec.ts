@@ -66,50 +66,55 @@ test('daily stock and Emdad files, exact option choice, reservation steps and hi
   const c = await page.request.post('/api/v1/cases', { headers, data: { customer: { fullName: 'مشتری ساختگی', phone: '09000007777' }, vehicle: { brand: 'ایران‌خودرو', model: 'دنا', vin: 'TESTVIN0000000777' }, admissionNo: '910001', admittedAt: new Date(Date.now() - 86_400_000).toISOString(), damageDescription: 'آزمون مرورگر' } });
   expect(c.status()).toBe(201);
   const kase = await c.json();
-  expect((await page.request.post(`/api/v1/cases/${kase.id}/parts`, { headers, data: { description: 'لنت جلو', partNumber: BASE, quantity: 2, source: 'stock' } })).status()).toBe(201);
-  await page.goto(`/cases/${kase.id}#case-parts`);
-  const panel = page.getByTestId('part-stock').filter({has:page.getByText('موجودی و رزرو این قطعه',{exact:true})}).first();
-  await expect(page.getByTestId('case-need')).toHaveCount(0);
-  await panel.locator(':scope > summary').click();
-  await panel.getByRole('button', { name: 'انتخاب گزینه و رزرو' }).click();
-  const dialog = page.getByTestId('reserve-dialog');
-  await expect(dialog.getByTestId('stock-option')).toHaveCount(8);
-  await expect(dialog.getByRole('radio', { checked: true })).toHaveCount(0);
-  await expect(dialog.getByText('رزرو رسمی سامانه ایران‌خودرو نیست')).toBeVisible();
-  await dialog.getByRole('radio', { name: `انتخاب کد ${BASE}99 در A-99` }).check();
-  await dialog.getByLabel(/مقدار رزرو/).fill('0.5');
-  await dialog.getByLabel('همین کد کامل و مقدار').check();
-  await page.screenshot({ path: info.outputPath('reserve-option-desktop.png') });
-  await page.getByRole('button', { name: 'ثبت رزرو داخلی' }).click();
-  await expect(panel.getByTestId('reservation')).toContainText('رزرو داخلی منیج');
+  expect((await page.request.post(`/api/v1/cases/${kase.id}/parts`, { headers, data: { description: 'لنت جلو', partNumber: BASE, quantity: 1, source: 'stock' } })).status()).toBe(201);
+  expect((await page.request.post(`/api/v1/cases/${kase.id}/parts`, { headers, data: { description: 'لنت عقب', partNumber: `${BASE}01`, quantity: 1, source: 'stock' } })).status()).toBe(201);
 
-  // Above the need is refused with a clear message and the dialog keeps the choice.
-  await panel.getByRole('button', { name: 'انتخاب گزینه و رزرو' }).click();
-  await dialog.getByRole('radio', { name: `انتخاب کد ${BASE}01 در A-01` }).check();
-  await dialog.getByLabel(/مقدار رزرو/).fill('2');
-  await dialog.getByLabel('همین کد کامل و مقدار').check();
-  await page.getByRole('button', { name: 'ثبت رزرو داخلی' }).click();
-  await expect(dialog.getByRole('alert')).toContainText('باقی‌مانده نیاز');
-  await dialog.getByLabel(/مقدار رزرو/).fill('1.5');
-  await page.getByRole('button', { name: 'ثبت رزرو داخلی' }).click();
-  await expect(panel.getByTestId('reservation')).toHaveCount(2);
+  // Unified parts list (spec section 7): the parts clerk reserves by the first 8 digits.
+  await page.goto('about:blank');
+  await page.context().clearCookies();
+  await login(page, 'parts');
+  await page.goto(`/cases/${kase.id}#case-parts`);
+  const ledger = page.getByTestId('parts-ledger');
+  const front = ledger.getByTestId('part').filter({ hasText: 'لنت جلو' });
+  await expect(front).toContainText('تعیین تکلیف نشده');
+  await front.getByRole('button', { name: 'انتخاب مسیر تأمین' }).click();
+  await front.getByRole('button', { name: 'رزرو از موجودی', exact: true }).click();
+  // All suffixes of the base code with usable quantity; nothing chosen automatically when several fit.
+  await expect(front.getByRole('radio')).toHaveCount(8);
+  await expect(front.getByRole('radio', { checked: true })).toHaveCount(0);
+  // ${BASE}99 has only 0.5 usable: it is shown but cannot be chosen for a need of 1.
+  await expect(front.getByRole('radio').last()).toBeDisabled();
+  await front.getByRole('radio').nth(1).check();
+  await page.screenshot({ path: info.outputPath('reserve-option-desktop.png') });
+  await front.getByRole('button', { name: 'رزرو از موجودی', exact: true }).last().click();
+  await expect(front).toContainText('رزرو از موجودی');
+  await expect(front.getByRole('button', { name: 'تحویل به واحد تعمیر' })).toBeVisible();
+  // The cancel button turns into «لغو رزرو».
+  await front.locator('.m-row-head').click();
+  await expect(front.getByRole('button', { name: 'لغو رزرو' })).toBeVisible();
+  const rear = ledger.getByTestId('part').filter({ hasText: 'لنت عقب' });
+  await rear.getByRole('button', { name: 'انتخاب مسیر تأمین' }).click();
+  await rear.getByRole('button', { name: 'رزرو از موجودی', exact: true }).click();
+  await rear.getByRole('radio').first().check();
+  await rear.getByRole('button', { name: 'رزرو از موجودی', exact: true }).last().click();
+  await expect(rear).toContainText('رزرو از موجودی');
 
   // Issue, then the option shows it as still deducted; release needs a reason.
   await page.goto('/stock');
-  await page.getByLabel('کد پایه، کد کامل یا نام قطعه').fill(`${BASE}99`);
+  await page.getByLabel('کد پایه، کد کامل یا نام قطعه').fill(`${BASE}02`);
   await page.getByRole('button', { name: 'جست‌وجو', exact: true }).click();
   const option = page.getByTestId('stock-option');
   await expect(option).toHaveCount(1);
-  await expect(option.locator('td').nth(9)).toHaveText('۰');
-  const row = page.getByTestId('reservation').filter({ hasText: '۱۲۳۴۵۶۷۸۹۹' });
+  await expect(option.locator('td').nth(9)).toHaveText('۲');
+  const row = page.getByTestId('reservation').filter({ hasText: '۱۲۳۴۵۶۷۸۰۲' });
   await row.getByRole('button', { name: 'ثبت خروج از انبار' }).click();
   await page.getByRole('button', { name: 'تأیید', exact: true }).click();
-  await expect(row).toContainText('منتظر تأیید انعکاس');
-  // Check persisted arithmetic independently of the UI cache.
-  const issuedOptions = await page.request.get(`/api/v1/stock/options?q=${BASE}99`);
+  await expect(row).toContainText('تا پایان کار پرونده از موجودی کم می‌شود');
+  // Check persisted arithmetic independently of the UI cache: handed over to an open case still counts.
+  const issuedOptions = await page.request.get(`/api/v1/stock/options?q=${BASE}02`);
   expect(issuedOptions.ok()).toBe(true);
-  expect((await issuedOptions.json()).items[0]).toMatchObject({ reserved: '0', issuedUnreflected: '0.5', available: '0' });
-  await expect(option.locator('td').nth(8)).toHaveText('۰.۵');
+  expect((await issuedOptions.json()).items[0]).toMatchObject({ reserved: '0', issuedUnreflected: '1', available: '2' });
+  await expect(option.locator('td').nth(8)).toHaveText('۱');
   const other = page.getByTestId('reservation').filter({ hasText: '۱۲۳۴۵۶۷۸۰۱' });
   await other.getByRole('button', { name: 'آزادکردن رزرو' }).click();
   await expect(page.getByRole('button', { name: 'تأیید', exact: true })).toBeDisabled();
@@ -154,11 +159,10 @@ test('daily stock and Emdad files, exact option choice, reservation steps and hi
   await expect(page.getByText('تصمیم اتصال ثبت شد')).toBeVisible();
   await page.getByRole('button', { name: 'بستن', exact: true }).click();
 
-  // The case now shows both identifiers and the linked request.
+  // The case shows both identifiers; the parts list stays the single place for supply.
   await page.goto(`/cases/${kase.id}#case-parts`);
-  const history=page.getByTestId('case-stock');
-  await expect(history).toContainText('۹۱۰۰۰۱');
-  await history.getByText(/امداد مرتبط با قطعات کارشناسی/).click();await expect(history.getByTestId('case-emdad')).toContainText('آماده جمع آوری');
+  await expect(page.locator('main')).toContainText('۹۱۰۰۰۱');
+  await expect(page.getByTestId('parts-ledger').getByTestId('part')).toHaveCount(2);
 
   // Parts desk header.
   await page.goto('/accidents/parts');
@@ -180,8 +184,9 @@ test('permissions, a full-size file through the web proxy and internal reminders
   await expect(page.getByRole('heading', { name: 'موجودی روزانه و رزرو' })).toBeVisible();
   expect((await page.request.post('/api/v1/emdad/requests/search', { headers, data: {} })).status()).toBe(201);
 
-  // Quality control sees neither, and direct API calls are refused.
-  await login(page, 'qc');
+  // A technician sees neither, and direct API calls are refused.
+  await page.context().clearCookies();
+  await login(page, 'technician');
   await page.goto('/daily-reports');
   await expect(page.getByText('برای این بخش مجوز ندارید')).toBeVisible();
   expect((await page.request.get('/api/v1/stock/options?q=12345678')).status()).toBe(403);

@@ -42,6 +42,20 @@ export function formatTimeInput(date: Date): string {
   return `${pad(p.hour)}:${pad(p.minute)}`;
 }
 
+export const JALALI_MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'] as const;
+/** Indexed by getUTCDay() of the Tehran wall clock (0 = Sunday). */
+export const PERSIAN_WEEKDAYS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'] as const;
+
+/** Short human form used next to a status: «دوشنبه ۱۸ آبان» (spec section 7). */
+export function formatJalaliDay(value: Date | string | null | undefined): string {
+  if (!value) return '—';
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '—';
+  const p = toJalaliParts(date);
+  const weekday = PERSIAN_WEEKDAYS[new Date(date.getTime() + TEHRAN_OFFSET_MINUTES * 60_000).getUTCDay()]!;
+  return `${weekday} ${toPersianDigits(String(p.jd))} ${JALALI_MONTHS[p.jm - 1]}`;
+}
+
 /** Display form with Persian digits: "۱۴۰۵/۰۸/۰۹" or "۱۴۰۵/۰۸/۰۹ ۱۴:۳۰". */
 export function formatJalali(
   value: Date | string | null | undefined,

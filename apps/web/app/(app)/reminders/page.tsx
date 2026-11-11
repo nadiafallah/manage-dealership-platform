@@ -10,6 +10,7 @@ import { formatJalali, toPersianDigits } from '@/lib/format';
 import { BackLink } from '@/components/BackLink';
 import { ReminderCards, REMINDER_INBOX } from '@/components/ReminderCards';
 import { ReminderComposer } from '@/components/ReminderComposer';
+import { PlateText } from '@/components/Plate';
 
 const STATUS_TONE = { sent: 'chip-amber', seen: 'chip-blue', done: 'chip-green' } as const;
 
@@ -57,7 +58,7 @@ export default function RemindersPage() {
                   {r.urgency === 'urgent' && <span className="chip chip-red">فوری</span>}
                 </div>
                 <p>{toPersianDigits(r.body)}</p>
-                <p className="xs muted">{caseLink(r.case)}{r.plate ? <> · پلاک <bdi>{toPersianDigits(r.plate)}</bdi></> : null} · {formatJalali(r.createdAt, { time: true })}{r.reply ? <> · جواب شما: {r.reply}</> : null}</p>
+                <p className="xs muted">{caseLink(r.case)}{r.plate ? <> · پلاک <PlateText value={r.plate} /></> : null} · {formatJalali(r.createdAt, { time: true })}{r.reply ? <> · جواب شما: {r.reply}</> : null}</p>
               </li>
             ))}
           </ul>
@@ -75,7 +76,7 @@ export default function RemindersPage() {
                   <span className="xs muted">{formatJalali(s.createdAt, { time: true })}</span>
                 </div>
                 <p>{toPersianDigits(s.body)}</p>
-                <p className="xs muted">{caseLink(s.case)}{s.plate ? <> · پلاک <bdi>{toPersianDigits(s.plate)}</bdi></> : null}</p>
+                <p className="xs muted">{caseLink(s.case)}{s.plate ? <> · پلاک <PlateText value={s.plate} /></> : null}</p>
                 <ul className="reminder-recipients">
                   {s.recipients.map((r) => (
                     <li key={r.id}>

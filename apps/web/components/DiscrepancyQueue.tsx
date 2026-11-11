@@ -15,6 +15,7 @@ import { useAuth } from '@/lib/auth';
 import { faNum, formatJalali, toPersianDigits } from '@/lib/format';
 import { useToast } from '@/lib/toast';
 import { Dialog } from './Dialog';
+import { PlateText } from './Plate';
 
 const TONE: Record<PartDiscrepancy['status'], string> = { open: 'chip-red', in_review: 'chip-amber', resolved: 'chip-green', dismissed: '' };
 const FILTERS = [
@@ -93,7 +94,7 @@ export function DiscrepancyQueue() {
                 <Link href={`/cases/${d.caseId}`}>
                   <bdi>{toPersianDigits(d.caseNumber)}</bdi>
                 </Link>
-                {d.plate && <span className="xs muted">{toPersianDigits(d.plate)}</span>}
+                {d.plate && <span className="xs muted"><PlateText value={d.plate} /></span>}
               </div>
               {can('part.manage') && (d.status === 'open' || d.status === 'in_review') && (
                 <div className="row no-print" style={{ gap: 6 }}>

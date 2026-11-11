@@ -1,0 +1,41 @@
+// Short interaction recording on the harness (synthetic data): sign-in → desk → case folder → parts → control room.
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? '@playwright/test');
+const executablePath = process.env.CHROME_PATH || undefined;
+const base = 'http://127.0.0.1:4400';
+const browser = await chromium.launch({ executablePath, args: ['--no-sandbox'] });
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'fa-IR', timezoneId: 'Asia/Tehran', recordVideo: { dir: '/tmp/rec', size: { width: 1280, height: 800 } } });
+const page = await ctx.newPage();
+const pause = (ms = 900) => page.waitForTimeout(ms);
+await page.goto(`${base}/login?as=none&mode=staff`, { waitUntil: 'networkidle' });
+await page.evaluate(() => document.fonts.ready); await pause(1200);
+await page.getByLabel('نام کاربری').pressSequentially('expert1', { delay: 60 });
+await page.getByLabel('رمز عبور').pressSequentially('synthetic', { delay: 50 });
+await pause(400);
+await page.getByRole('button', { name: 'ورود', exact: true }).click();
+await page.waitForLoadState('networkidle'); await pause(600);
+await page.goto(`${base}/accidents/expert`, { waitUntil: 'networkidle' }); await pause(1400);
+await page.getByRole('button', { name: /^عقب‌تر از برنامه/ }).click(); await pause(1200);
+await page.getByRole('button', { name: /^همه/ }).click(); await pause(600);
+await page.mouse.wheel(0, 500); await pause(900);
+await page.locator('.folder').filter({ hasText: 'تیبا' }).getByRole('link', { name: /باز کردن پرونده/ }).click();
+await page.waitForLoadState('networkidle'); await pause(1500);
+await page.getByRole('button', { name: /بررسی و تأیید/ }).click(); await pause(1500);
+await page.keyboard.press('Escape'); await pause(500);
+await page.getByRole('tab', { name: 'قطعات', exact: true }).click(); await pause(1200);
+await page.getByRole('tab', { name: 'تاریخچه', exact: true }).click(); await pause(1000);
+await page.getByRole('tab', { name: 'کار امروز', exact: true }).click(); await pause(900);
+// parts clerk
+await page.goto(`${base}/parts?as=parts&case=case-11`, { waitUntil: 'networkidle' }); await pause(1500);
+await page.locator('.ledger-row').first().click(); await pause(1500);
+// service manager
+await page.goto(`${base}/control-room?as=manager`, { waitUntil: 'networkidle' }); await pause(1800);
+await page.getByRole('button', { name: 'این هفته' }).click(); await pause(900);
+await page.locator('.cr-map').scrollIntoViewIfNeeded(); await pause(600);
+const bays = page.getByTestId('workshop-scene').getByRole('button');
+await bays.nth(2).click(); await pause(1300);
+await bays.nth(0).click(); await pause(1300);
+await page.mouse.wheel(0, 650); await pause(1200);
+await page.getByRole('button', { name: /^تذکر به/ }).first().click(); await pause(1500);
+await page.keyboard.press('Escape'); await pause(600);
+await ctx.close(); await browser.close();
+console.log('recorded');

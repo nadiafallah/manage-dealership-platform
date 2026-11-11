@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ALERT_KINDS, ALERT_RESPONSES } from './alerts';
 import { REPAIR_TRADES } from './workshop';
 import { PIN_LOGIN_ROLES } from './permissions';
 import {
@@ -99,17 +100,20 @@ export const technicianSignOutSchema = z.object({ reason: z.string().trim().max(
 export const technicianActiveSchema = z.object({ active: z.boolean(), reason: z.string().trim().max(300).optional() });
 export type TechnicianActiveInput = z.infer<typeof technicianActiveSchema>;
 
-/** Coordinator's answer to a non-blocking alert (advance or parts amount). */
+/** The accident expert's advance decision on a non-blocking cost alert (spec section 9). */
 export const alertResponseSchema = z.object({
-  kind: z.enum(['advance', 'parts_amount']),
+  kind: z.enum(ALERT_KINDS),
   level: z.number().int().min(1).max(1000),
-  response: z.enum(['received', 'not_received', 'not_needed']),
+  response: z.enum(ALERT_RESPONSES),
   note: z.string().trim().max(500).optional(),
 });
 export type AlertResponseInput = z.infer<typeof alertResponseSchema>;
 
+/** Thresholds set by the system administrator or the owner. Omitted fields keep their current value. */
 export const alertSettingsSchema = z.object({
   partsAlertThresholdRial: z.number().int().min(1_000_000).max(1_000_000_000_000),
+  expensivePartThresholdRial: z.number().int().min(1_000_000).max(1_000_000_000_000).optional(),
+  emdadLateDays: z.number().int().min(1).max(60).optional(),
 });
 export type AlertSettingsInput = z.infer<typeof alertSettingsSchema>;
 export type TechnicianPinInput = z.infer<typeof technicianPinSchema>;
@@ -443,6 +447,33 @@ export const partActionSchema = z
   })
   .refine((v) => v.action !== 'cancel' || !!v.note, { message: 'برای لغو ذکر دلیل الزامی است', path: ['note'] });
 export type PartActionInput = z.infer<typeof partActionSchema>;
+
+// ---- unified parts list (spec section 7): one endpoint, one action per state
+const reason = z.string().trim().min(3, 'علت را بنویسید').max(500);
+const flowBase = { expectedVersion: z.number().int().min(1) };
+export const partFlowActionSchema = z.discriminatedUnion('action', [
+  z.object({ ...flowBase, action: z.literal('reserve'), snapshotId: uuid, fullStockCode: z.string().trim().min(1).max(32), locationAddress: z.string().max(120).default(''), saleUnitRial: rial.optional() }),
+  // The Emdad Vijeh request number is mandatory (per vehicle: VIN + admission number).
+  z.object({ ...flowBase, action: z.literal('emdad'), requestNo: z.string().trim().min(1, 'شمارهٔ درخواست امداد ویژه را وارد کنید').max(64), requestedAt: optionalIsoDate, requestedCode: optionalText(32) }),
+  z.object({ ...flowBase, action: z.literal('market'), supplier: z.string().trim().min(1, 'نام فروشنده را وارد کنید').max(120), purchaseUnitRial: rial, saleUnitRial: rial, etaAt: optionalIsoDate }),
+  z.object({ ...flowBase, action: z.literal('receive'), receiptDocNo: optionalText(64) }),
+  z.object({ ...flowBase, action: z.literal('hand_over'), recipientName: z.string().trim().min(1, 'نام تحویل‌گیرنده را وارد کنید').max(120), taskId: uuid.nullish(), departmentId: uuid.nullish(), saleUnitRial: rial.optional() }),
+  z.object({ ...flowBase, action: z.literal('cancel'), reason }),
+  z.object({ ...flowBase, action: z.literal('return'), reason }),
+  z.object({ ...flowBase, action: z.literal('set_price'), saleUnitRial: rial }),
+  z.object({ ...flowBase, action: z.literal('announce_price'), saleUnitRial: rial, note: optionalText(300) }),
+]);
+export type PartFlowActionInput = z.infer<typeof partFlowActionSchema>;
+
+/** The accident expert answers a price announcement: confirm, or give another instruction. Never blocks. */
+export const priceNoticeResponseSchema = z
+  .object({
+    expectedVersion: z.number().int().min(1),
+    response: z.enum(['approved', 'instruction']),
+    instruction: optionalText(300),
+  })
+  .refine((v) => v.response !== 'instruction' || !!v.instruction, { message: 'دستور را بنویسید (مثلاً از فروشگاه فلان بخرید یا امداد ویژه بزنید)', path: ['instruction'] });
+export type PriceNoticeResponseInput = z.infer<typeof priceNoticeResponseSchema>;
 
 export const financeSharesSchema = z.object({
   // Payer split of the estimate; null = not decided yet.

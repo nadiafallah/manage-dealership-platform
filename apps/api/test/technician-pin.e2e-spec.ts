@@ -2,7 +2,7 @@ import request from 'supertest';
 import { eq } from 'drizzle-orm';
 import { auditEvents, sessions, users } from '../src/db/schema';
 import { isPinEligible } from '@manage/shared';
-import { createHarness, type Client, type Harness } from './harness';
+import { createHarness, LEGACY_QC_PERMISSIONS, type Client, type Harness } from './harness';
 
 const KEY = 'synthetic-test-authenticator-key-32-characters';
 const DP = 'Device2026test';
@@ -61,8 +61,11 @@ describe('Technician sign-in with username + 4-digit PIN', () => {
       expect((await pinLogin('admin', '4321')).status).toBe(401);
       expect(isPinEligible(['technician'], true)).toBe(false);
       expect(isPinEligible(['technician', 'system_admin'])).toBe(false);
+      expect(isPinEligible(['accident_expert'])).toBe(true);
+      expect(isPinEligible(['service_manager', 'parts_clerk'])).toBe(true);
+      // A stored legacy role resolves to its successor; a cashier-only account has no role left.
       expect(isPinEligible(['accident_coordinator'])).toBe(true);
-      expect(isPinEligible(['service_manager', 'cashier'])).toBe(true);
+      expect(isPinEligible(['cashier'])).toBe(false);
       expect(isPinEligible(['system_admin'])).toBe(false);
     });
 
@@ -141,9 +144,9 @@ describe('Technician sign-in with username + 4-digit PIN', () => {
     it('creates every operational role the same way, and a PIN session keeps the access of that role', async () => {
       const made = await admin.post('/staff/technicians', { displayName: 'مدیر خدمات آزمون', username: 'svc.pin', pin: '2580', devicePassword: DP, role: 'service_manager' });
       expect(made.status).toBe(201);
-      expect((await admin.post('/staff/technicians', { displayName: 'مسئول تصادفات آزمون', username: 'coord.pin', pin: '0852', devicePassword: DP, role: 'accident_coordinator' })).status).toBe(201);
+      expect((await admin.post('/staff/technicians', { displayName: 'کارشناس تصادفات آزمون', username: 'coord.pin', pin: '0852', devicePassword: DP, role: 'accident_expert' })).status).toBe(201);
       // Unit and bay are for technicians only.
-      expect((await admin.post('/staff/technicians', { displayName: 'صندوق‌دار آزمون', username: 'cash.pin', pin: '1590', devicePassword: DP, role: 'cashier', trade: 'body', stationCode: 'C-01' })).status).toBe(400);
+      expect((await admin.post('/staff/technicians', { displayName: 'مسئول قطعات آزمون', username: 'cash.pin', pin: '1590', devicePassword: DP, role: 'parts_clerk', trade: 'body', stationCode: 'C-01' })).status).toBe(400);
       // Never a system administrator through this form.
       expect((await admin.post('/staff/technicians', { displayName: 'مدیر سیستم آزمون', username: 'sys.pin', pin: '1590', devicePassword: DP, role: 'system_admin' })).status).toBe(400);
       const svc = await pinLogin('svc.pin', '2580');
@@ -193,7 +196,7 @@ describe('Technician sign-in with username + 4-digit PIN', () => {
     });
 
     it('needs user.manage to manage technician accounts and refuses duplicate usernames', async () => {
-      const qc = await h.login('qc');
+      const qc = await h.loginAs('narrow', [], LEGACY_QC_PERMISSIONS);
       expect((await qc.post('/staff/technicians', { displayName: 'x آزمون', username: 'tech9', pin: '1234' })).status).toBe(403);
       expect((await admin.post('/staff/technicians', { displayName: 'باتری‌ساز', username: 'parts', pin: '1234', devicePassword: DP })).status).toBe(409);
       const staffId = (await admin.get('/auth/me')).body.id;

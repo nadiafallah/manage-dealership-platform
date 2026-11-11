@@ -99,9 +99,9 @@ describe('authentication and HTTP hardening', () => {
   });
 
   it('returns the current user with permissions; logout revokes the session', async () => {
-    const c = await h.login('cashier');
+    const c = await h.login('parts');
     const me = await c.get('/auth/me');
-    expect(me.body.roles).toEqual(['cashier']);
+    expect(me.body.roles).toEqual(['parts_clerk']);
     expect(me.body.permissions).toContain('case.read');
     expect(me.body.permissions).not.toContain('task.manage');
     await c.post('/auth/logout');
@@ -377,7 +377,7 @@ describe('acceptance 10: roles and access control (enforced by the API)', () => 
       username: 'supervisor',
       displayName: 'سرپرست دیگر',
       passwordHash: await hashPassword(TEST_PASSWORD),
-      roles: ['accident_supervisor'],
+      roles: ['accident_expert'],
       isTest: true,
     });
     // Same username in two tenants: login must name the tenant.

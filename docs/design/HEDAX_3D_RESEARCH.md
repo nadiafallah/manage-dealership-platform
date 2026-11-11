@@ -1,3 +1,5 @@
+> **Superseded (package 6, 2026-11-10):** the Signature theme and the `?ui=classic` switch were removed. The current design system is [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md); this file is kept as history.
+
 # HEDAX Signature — design research
 
 Status: 2026-11-07, branch `feature/hedax-signature-3d-manage`. This file records what informed the design and what was deliberately rejected.

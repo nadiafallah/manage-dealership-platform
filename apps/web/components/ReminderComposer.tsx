@@ -20,6 +20,9 @@ export interface ReminderDefaults {
   role?: Role;
   caseId?: string;
   caseLabel?: string;
+  /** One part line of the car (spec §9); sent only together with the case. */
+  partId?: string;
+  partLabel?: string;
   plate?: string | null;
   body?: string;
   source?: 'manual' | 'manager_report';
@@ -32,7 +35,7 @@ export function ReminderComposer({ open, onClose, defaults, onSent }: { open: bo
   const { data: people } = useSWR<ReminderPerson[]>(open ? '/reminders/people' : null, fetcher);
   const [mode, setMode] = useState<'people' | 'role'>('people');
   const [userIds, setUserIds] = useState<string[]>([]);
-  const [role, setRole] = useState<Role>('accident_coordinator');
+  const [role, setRole] = useState<Role>('accident_expert');
   const [body, setBody] = useState('');
   const [urgent, setUrgent] = useState(false);
   const [withCase, setWithCase] = useState(true);
@@ -48,7 +51,7 @@ export function ReminderComposer({ open, onClose, defaults, onSent }: { open: bo
     const preset = (defaults?.userIds ?? []).filter((id) => id !== me.id);
     setMode(defaults?.role && !preset.length ? 'role' : 'people');
     setUserIds(preset);
-    setRole(defaults?.role ?? 'accident_coordinator');
+    setRole(defaults?.role ?? 'accident_expert');
     setBody(defaults?.body ?? '');
     setUrgent(false);
     setWithCase(true);
@@ -70,7 +73,7 @@ export function ReminderComposer({ open, onClose, defaults, onSent }: { open: bo
       const res = await api<{ recipients: number }>('/reminders', {
         body: {
           ...(mode === 'people' ? { userIds } : { role }),
-          ...(defaults?.caseId && withCase ? { caseId: defaults.caseId } : {}),
+          ...(defaults?.caseId && withCase ? { caseId: defaults.caseId, ...(defaults.partId ? { partId: defaults.partId } : {}) } : {}),
           ...(plate.trim() ? { plate: plate.trim() } : {}),
           body: body.trim(),
           urgency: urgent ? 'urgent' : 'normal',
@@ -123,7 +126,7 @@ export function ReminderComposer({ open, onClose, defaults, onSent }: { open: bo
           <label className="field">
             <span>نقش گیرنده</span>
             <select className="input" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-              {ROLES.filter((r) => r !== 'accident_expert' && r !== 'accident_supervisor').map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+              {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
             <span className="hint">همهٔ همکاران فعال این نقش در همین نمایندگی تذکر را می‌گیرند.</span>
           </label>
@@ -131,7 +134,7 @@ export function ReminderComposer({ open, onClose, defaults, onSent }: { open: bo
         {defaults?.caseId && (
           <label className="check">
             <input type="checkbox" checked={withCase} onChange={(e) => setWithCase(e.target.checked)} />
-            <span>وصل به پرونده {defaults.caseLabel ? <bdi>{toPersianDigits(defaults.caseLabel)}</bdi> : ''}</span>
+            <span>وصل به پرونده {defaults.caseLabel ? <bdi>{toPersianDigits(defaults.caseLabel)}</bdi> : ''}{defaults.partLabel ? <> · قطعهٔ «{defaults.partLabel}»</> : ''}</span>
           </label>
         )}
         <label className="field">

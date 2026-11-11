@@ -1,9 +1,21 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, notInArray } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
+  PART_FLOW_STATE_LABELS,
   PART_SOURCE_LABELS,
   PART_SOURCES,
+  allowedPartActions,
+  isPartActionAllowed,
+  partActionLabel,
+  partCodeKey,
+  partFlowFilter,
+  partFlowState,
+  type PartsDeskCard,
+  type PartFlowActionInput,
+  type PartFlowState,
+  type PriceNotice,
+  type PriceNoticeResponseInput,
   assessmentDispatchLines,
   assessmentPartKey,
   toLatinDigits,
@@ -20,10 +32,11 @@ import { AuditService } from '../audit/audit.service';
 import type { Actor } from '../auth/auth.types';
 import { BlockersService } from '../blockers/blockers.service';
 import { assertNotFuture, CasesService, MINUTE_TOLERANCE_MS } from '../cases/cases.service';
-import { badRequest, notFound, versionConflict } from '../common/errors';
+import { badRequest, forbidden, notFound, versionConflict } from '../common/errors';
 import { newId } from '../common/ids';
 import { DATABASE, type DatabaseHandle, type DbOrTx } from '../db/database';
-import { assessmentItems, assessments, blockers, departments, partRequests, partQuotes, stockReservations, users } from '../db/schema';
+import { assessmentItems, assessments, blockers, cases, customers, departments, emdadRequests, partPriceNotices, partRequests, partQuotes, stockReservations, tasks, users, vehicles } from '../db/schema';
+import { caseAndBayRecipients, notifyUsers, partLink } from './part-notify';
 import { StockService } from '../daily-reports/stock.service';
 import { FinanceService, PURCHASE_SOURCES } from '../finance/finance.service';
 import { readFirstSheet, XlsxError } from './xlsx';
@@ -31,6 +44,8 @@ import { readFirstSheet, XlsxError } from './xlsx';
 type PartRow = typeof partRequests.$inferSelect;
 
 const createdByUser = alias(users, 'part_created_by');
+const noticeBy = alias(users, 'price_notice_by');
+const noticeAnswerBy = alias(users, 'price_notice_answer_by');
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
 // Column headers of the import sheet (first row). Matching ignores spaces.
@@ -80,7 +95,21 @@ export class PartsService {
 
   async create(actor: Actor, caseId: string, input: CreatePartInput): Promise<Part> {
     const id = await this.db.transaction(async (tx) => {
-      await this.loadOpenCase(tx, actor.user.tenantId, caseId);
+      const tenantId = actor.user.tenantId;
+      await this.loadOpenCase(tx, tenantId, caseId);
+      // Anti-duplicate (spec section 5): the same technical code never makes a second row;
+      // while the line is still undecided its quantity is raised instead.
+      const key = partCodeKey(input.partNumber);
+      const same = key ? (await this.activeCodes(tx, tenantId, caseId)).get(key) : undefined;
+      if (same) {
+        if (partFlowState(same) !== 'needed') {
+          throw badRequest('DUPLICATE_PART_CODE', `این کد فنی از قبل در فهرست است («${same.description}») و تأمین آن در جریان است؛ ردیف تازه ساخته نشد`, { partId: same.id });
+        }
+        const p = await this.loadForWrite(tx, tenantId, same.id, same.version);
+        const add = input.quantity ?? 1;
+        await this.finishFlow(tx, actor, p, { quantity: p.quantity + add }, 'part.quantity_increased', 'همان کد فنی دوباره ثبت شد؛ تعداد همان قلم افزایش یافت', 'needed', { quantity: p.quantity });
+        return p.id;
+      }
       return (await this.insert(tx, actor, caseId, { ...input, assessmentItemId: null }, null)).id;
     });
     return this.get(actor, id);
@@ -143,20 +172,53 @@ export class PartsService {
   }
 
   async importSheet(actor: Actor, caseId: string, input: ImportPartsInput): Promise<PartImportResult> {
-    const { rows, errors } = parseImport(Buffer.from(input.fileBase64, 'base64'));
+    const parsed = parseImport(Buffer.from(input.fileBase64, 'base64'));
+    const errors = parsed.errors;
     if (input.dryRun || errors.length) {
       // A file with errors is never imported partly.
       if (!input.dryRun) throw badRequest('IMPORT_INVALID', 'فایل خطا دارد و هیچ ردیفی وارد نشد', errors);
       await this.cases.detail(actor, caseId);
-      return { dryRun: true, rows, errors, created: 0 };
+      const { fresh, duplicates } = this.splitDuplicates(parsed.rows, await this.activeCodes(this.db, actor.user.tenantId, caseId));
+      return { dryRun: true, rows: fresh, errors, created: 0, duplicates };
     }
+    let result: { fresh: PartImportRow[]; duplicates: PartImportRow[] } = { fresh: [], duplicates: [] };
     await this.db.transaction(async (tx) => {
       await this.loadOpenCase(tx, actor.user.tenantId, caseId);
-      for (const r of rows) {
+      result = this.splitDuplicates(parsed.rows, await this.activeCodes(tx, actor.user.tenantId, caseId));
+      for (const r of result.fresh) {
         await this.insert(tx, actor, caseId, { ...r, assessmentItemId: null }, `ورود از اکسل، ردیف ${r.row}`);
       }
     });
-    return { dryRun: false, rows, errors: [], created: rows.length };
+    return { dryRun: false, rows: result.fresh, errors: [], created: result.fresh.length, duplicates: result.duplicates };
+  }
+
+  /** Technical codes of the active lines of a case (spec section 5: anti-duplicate). */
+  private async activeCodes(db: DbOrTx, tenantId: string, caseId: string) {
+    const rows = await db
+      .select({ id: partRequests.id, partNumber: partRequests.partNumber, status: partRequests.status, source: partRequests.source, consumedAt: partRequests.consumedAt, version: partRequests.version, description: partRequests.description })
+      .from(partRequests)
+      .where(and(eq(partRequests.tenantId, tenantId), eq(partRequests.caseId, caseId), notInArray(partRequests.status, ['cancelled', 'returned'])));
+    const out = new Map<string, (typeof rows)[number]>();
+    for (const r of rows) {
+      const key = partCodeKey(r.partNumber);
+      if (key && !r.consumedAt && !out.has(key)) out.set(key, r);
+    }
+    return out;
+  }
+
+  private splitDuplicates(rows: PartImportRow[], existing: Map<string, unknown>) {
+    const seen = new Set(existing.keys());
+    const fresh: PartImportRow[] = [];
+    const duplicates: PartImportRow[] = [];
+    for (const r of rows) {
+      const key = partCodeKey(r.partNumber);
+      if (key && seen.has(key)) duplicates.push(r);
+      else {
+        if (key) seen.add(key);
+        fresh.push(r);
+      }
+    }
+    return { fresh, duplicates };
   }
 
   async act(actor: Actor, id: string, input: PartActionInput): Promise<Part> {
@@ -278,6 +340,247 @@ export class PartsService {
     return saved;
   }
 
+  // ------------------------------------------------------- unified list (spec 7)
+
+  /** Latest official Emdad category linked to each line (by match or by request number). */
+  private async emdadByPart(db: DbOrTx, tenantId: string, partIds: string[]) {
+    const out = new Map<string, { requestNo: string | null; category: string; statusText: string | null; reportAt: string }>();
+    if (!partIds.length) return out;
+    const rows = await db
+      .select({ partId: emdadRequests.partRequestId, requestNo: emdadRequests.requestNo, category: emdadRequests.statusCategory, official: emdadRequests.official, at: emdadRequests.lastReportAt })
+      .from(emdadRequests)
+      .where(and(eq(emdadRequests.tenantId, tenantId), inArray(emdadRequests.partRequestId, partIds)))
+      .orderBy(asc(emdadRequests.lastReportAt));
+    for (const r of rows) {
+      const official = (r.official ?? {}) as { emdadStatus?: string };
+      out.set(r.partId!, { requestNo: r.requestNo, category: r.category, statusText: official.emdadStatus ?? null, reportAt: r.at.toISOString() });
+    }
+    return out;
+  }
+
+  /**
+   * One action of the unified list. The state machine of spec section 7 is
+   * enforced here, on the server: an action that is not valid in the current
+   * state is refused with a stable code and a Persian message.
+   */
+  async flow(actor: Actor, id: string, input: PartFlowActionInput): Promise<Part> {
+    if (!actor.user.permissions.has('part.manage')) throw forbidden('تعیین تکلیف، رزرو، لغو و قیمت قطعه کار مسئول قطعات است');
+    await this.db.transaction(async (tx) => {
+      const tenantId = actor.user.tenantId;
+      const p = await this.loadForWrite(tx, tenantId, id, input.expectedVersion);
+      const emdad = (await this.emdadByPart(tx, tenantId, [p.id])).get(p.id);
+      const state = partFlowState({ status: p.status, source: p.source, consumedAt: p.consumedAt, emdadCategory: emdad?.category });
+      if (!isPartActionAllowed(state, input.action)) {
+        throw badRequest('PART_ACTION_NOT_ALLOWED', `«${partActionLabel(state, input.action)}» در وضعیت «${PART_FLOW_STATE_LABELS[state]}» مجاز نیست`, { state, allowed: allowedPartActions(state) });
+      }
+      const now = new Date();
+      let patch: Partial<PartRow> = {};
+      let action = `part.${input.action}`;
+      switch (input.action) {
+        case 'reserve': {
+          // From «تأمین توسط نمایندگی» the line first returns to an open need.
+          let row = p;
+          if (state === 'dealer_supply') row = await this.save(tx, p, { status: 'needed' });
+          const reservationId = await this.stock.reserveIn(tx, actor, { partRequestId: row.id, snapshotId: input.snapshotId, fullStockCode: input.fullStockCode, locationAddress: input.locationAddress, quantity: String(row.quantity), confirm: true });
+          const [r] = await tx.select({ unitSalePrice: stockReservations.unitSalePrice }).from(stockReservations).where(eq(stockReservations.id, reservationId));
+          const fromStock = r?.unitSalePrice != null ? Math.round(Number(r.unitSalePrice)) : null;
+          patch = { status: 'reserved', source: 'stock', reservedAt: now, inStock: true, salePriceRial: input.saleUnitRial ?? row.salePriceRial ?? fromStock };
+          action = 'part.reserved';
+          await this.finishFlow(tx, actor, row, patch, action, null, state);
+          await this.notifyReady(tx, actor, row);
+          return;
+        }
+        case 'emdad':
+          patch = { status: 'ordered', source: 'company', orderRef: input.requestNo, orderedAt: input.requestedAt ? new Date(input.requestedAt) : now, supplier: null, etaAt: null, firstEtaAt: null };
+          action = 'part.emdad_requested';
+          await this.finishFlow(tx, actor, p, patch, action, input.requestedCode ? `کد اختصاصی درخواستی: ${input.requestedCode}` : null, state);
+          return;
+        case 'market': {
+          // Payer authorization (golden card / insurance) is recorded by the expert; it never blocks (spec principle 7).
+          const gate = await this.finance.gate(tx, tenantId, p.caseId, input.purchaseUnitRial * p.quantity);
+          const eta = input.etaAt ? new Date(input.etaAt) : null;
+          patch = { status: 'ordered', source: 'external', supplier: input.supplier, unitPriceRial: input.purchaseUnitRial, salePriceRial: input.saleUnitRial, orderedAt: now, etaAt: eta, firstEtaAt: p.firstEtaAt ?? eta, orderRef: null, financeBasis: gate.reason, financeExceptionId: gate.exceptionId ?? null };
+          action = 'part.market_ordered';
+          await this.finishFlow(tx, actor, p, patch, action, null, state);
+          return;
+        }
+        case 'receive':
+          patch = { status: 'received', receivedAt: now, receiptDocNo: input.receiptDocNo ?? null, inspection: 'ok', inspectionNote: null };
+          action = 'part.received';
+          await this.finishFlow(tx, actor, p, patch, action, null, state);
+          await this.notifyReady(tx, actor, p);
+          return;
+        case 'hand_over': {
+          let departmentId = input.departmentId ?? null;
+          if (input.taskId) {
+            const [t] = await tx.select({ id: tasks.id, departmentId: tasks.departmentId }).from(tasks).where(and(eq(tasks.id, input.taskId), eq(tasks.tenantId, tenantId), eq(tasks.caseId, p.caseId)));
+            if (!t) throw badRequest('PART_TARGET_INVALID', 'جایگاه انتخاب‌شده به این پرونده تعلق ندارد');
+            departmentId = t.departmentId;
+          }
+          await this.actIn(tx, actor, id, { action: 'hand_over', expectedVersion: p.version, recipientName: input.recipientName, departmentId, salePriceRial: input.saleUnitRial }, now);
+          return;
+        }
+        case 'cancel':
+          await this.actIn(tx, actor, id, { action: 'cancel', expectedVersion: p.version, note: input.reason }, now);
+          await this.closeNotices(tx, p.id);
+          return;
+        case 'return': {
+          // Back to usable stock: the issued reservation stops lowering it (spec section 7).
+          const issued = await tx.select().from(stockReservations).where(and(eq(stockReservations.tenantId, tenantId), eq(stockReservations.partRequestId, p.id), eq(stockReservations.status, 'issued')));
+          for (const r of issued) {
+            await tx.update(stockReservations).set({ status: 'returned', closedAt: now, closedBy: actor.user.id, reason: input.reason, updatedAt: now, version: r.version + 1 }).where(and(eq(stockReservations.id, r.id), eq(stockReservations.version, r.version)));
+            await this.audit.record(tx, actor, { entityType: 'part', entityId: p.id, caseId: p.caseId, action: 'stock.returned', reason: input.reason, before: { reservationId: r.id, status: 'issued' }, after: { reservationId: r.id, status: 'returned' } });
+          }
+          patch = { status: 'returned', returnedAt: now, returnReason: input.reason };
+          action = 'part.returned';
+          await this.finishFlow(tx, actor, p, patch, action, input.reason, state);
+          await this.closeNotices(tx, p.id);
+          return;
+        }
+        case 'set_price':
+          // Free and silent (spec decision 6): only the audit trail records it.
+          await this.finishFlow(tx, actor, p, { salePriceRial: input.saleUnitRial }, 'part.price_changed', null, state, { salePriceRial: p.salePriceRial });
+          return;
+        case 'announce_price': {
+          await this.finishFlow(tx, actor, p, { salePriceRial: input.saleUnitRial }, 'part.price_announced', input.note ?? null, state, { salePriceRial: p.salePriceRial });
+          await this.closeNotices(tx, p.id);
+          const noticeId = newId();
+          await tx.insert(partPriceNotices).values({ id: noticeId, tenantId, caseId: p.caseId, partRequestId: p.id, saleUnitRial: input.saleUnitRial, note: input.note ?? null, announcedBy: actor.user.id, isTest: actor.user.isTestTenant });
+          const [kase] = await tx.select({ responsibleUserId: cases.responsibleUserId }).from(cases).where(and(eq(cases.id, p.caseId), eq(cases.tenantId, tenantId)));
+          await notifyUsers(tx, tenantId, [kase?.responsibleUserId], {
+            kind: 'price_notice',
+            title: `اعلام قیمت: ${p.description}`,
+            body: `${input.saleUnitRial.toLocaleString('fa-IR')} ریال${input.note ? ` — ${input.note}` : ''}. تأیید کنید یا دستور دیگری بدهید؛ کار متوقف نمی‌شود.`,
+            link: partLink(p.caseId, p.id),
+            dedupeKey: `price_notice:${noticeId}`,
+          });
+          return;
+        }
+      }
+    });
+    return this.get(actor, id);
+  }
+
+  private async finishFlow(tx: DbOrTx, actor: Actor, p: PartRow, patch: Partial<PartRow>, action: string, reason: string | null, state: PartFlowState, before?: Record<string, unknown>) {
+    const saved = await this.save(tx, p, patch);
+    const after: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(patch)) after[k] = v instanceof Date ? v.toISOString() : v;
+    await this.audit.record(tx, actor, {
+      entityType: 'part',
+      entityId: p.id,
+      caseId: p.caseId,
+      action,
+      reason,
+      before: before ?? { status: p.status, flowState: state },
+      after: { description: p.description, ...after },
+      snapshot: { version: saved.version, row: saved },
+    });
+    return saved;
+  }
+
+  /** «قطعه آماده است، تحویل بگیرید»: the case's expert and the technicians of its open steps. */
+  private async notifyReady(tx: DbOrTx, actor: Actor, p: PartRow) {
+    const to = (await caseAndBayRecipients(tx, actor.user.tenantId, p.caseId)).filter((u) => u !== actor.user.id);
+    await notifyUsers(tx, actor.user.tenantId, to, { kind: 'part_ready', title: `قطعه آماده است: ${p.description}`, body: 'قطعه آمادهٔ تحویل به جایگاه است؛ تحویل بگیرید.', link: partLink(p.caseId, p.id), dedupeKey: `part_ready:${p.id}:${p.version}` });
+  }
+
+  /** An open announcement is superseded by a new one, a cancellation or a return. */
+  private async closeNotices(tx: DbOrTx, partId: string) {
+    await tx.update(partPriceNotices).set({ response: 'superseded', respondedAt: new Date() }).where(and(eq(partPriceNotices.partRequestId, partId), isNull(partPriceNotices.response)));
+  }
+
+  /** The accident expert confirms an announced price or gives another instruction (never blocks). */
+  async respondPriceNotice(actor: Actor, noticeId: string, input: PriceNoticeResponseInput): Promise<PriceNotice> {
+    const tenantId = actor.user.tenantId;
+    await this.db.transaction(async (tx) => {
+      const [n] = await tx.select().from(partPriceNotices).where(and(eq(partPriceNotices.id, noticeId), eq(partPriceNotices.tenantId, tenantId))).for('update');
+      if (!n) throw notFound('اعلام قیمت');
+      if (n.version !== input.expectedVersion) throw versionConflict(n.version);
+      if (n.response) throw badRequest('PRICE_NOTICE_CLOSED', 'به این اعلام قیمت قبلاً پاسخ داده شده یا اعلام تازه‌تری جای آن را گرفته است');
+      const now = new Date();
+      await tx.update(partPriceNotices).set({ response: input.response, instruction: input.instruction ?? null, respondedBy: actor.user.id, respondedAt: now, version: n.version + 1 }).where(eq(partPriceNotices.id, n.id));
+      await this.audit.record(tx, actor, { entityType: 'part', entityId: n.partRequestId, caseId: n.caseId, action: 'part.price_notice_answered', after: { noticeId: n.id, saleUnitRial: n.saleUnitRial, response: input.response, instruction: input.instruction ?? null } });
+      const [p] = await tx.select({ description: partRequests.description }).from(partRequests).where(eq(partRequests.id, n.partRequestId));
+      await notifyUsers(tx, tenantId, [n.announcedBy], {
+        kind: 'price_notice_answer',
+        title: `پاسخ کارشناس به قیمت «${p?.description ?? 'قطعه'}»`,
+        body: input.response === 'approved' ? 'قیمت تأیید شد.' : `دستور: ${input.instruction}`,
+        link: partLink(n.caseId, n.partRequestId),
+        dedupeKey: `price_notice_answer:${n.id}`,
+      });
+    });
+    const [notice] = await this.notices(this.db, tenantId, { id: noticeId });
+    return notice!;
+  }
+
+  /** The parts clerk's desk: open vehicles with undecided, in-progress or ready lines, oldest need first. */
+  async desk(actor: Actor): Promise<PartsDeskCard[]> {
+    const tenantId = actor.user.tenantId;
+    const rows = await this.db
+      .select({ p: partRequests, c: { id: cases.id, caseNumber: cases.caseNumber, admissionNo: cases.admissionNo, coverageType: cases.coverageType, admittedAt: cases.admittedAt }, plate: vehicles.plate, model: vehicles.model, customer: customers.fullName })
+      .from(partRequests)
+      .innerJoin(cases, eq(cases.id, partRequests.caseId))
+      .innerJoin(vehicles, eq(vehicles.id, cases.vehicleId))
+      .leftJoin(customers, eq(customers.id, cases.customerId))
+      .where(and(eq(partRequests.tenantId, tenantId), eq(cases.status, 'open'), notInArray(partRequests.status, ['cancelled', 'returned', 'handed_over'])));
+    const emdad = await this.emdadByPart(this.db, tenantId, rows.map((r) => r.p.id));
+    const cards = new Map<string, PartsDeskCard>();
+    for (const { p, c, plate, model, customer } of rows) {
+      const state = partFlowState({ status: p.status, source: p.source, consumedAt: p.consumedAt, emdadCategory: emdad.get(p.id)?.category });
+      const f = partFlowFilter(state);
+      if (!f) continue;
+      const card = cards.get(c.id) ?? { caseId: c.id, caseNumber: c.caseNumber, admissionNo: c.admissionNo, plate, vehicleLabel: model ?? '', customerName: customer, coverageType: c.coverageType, admittedAt: c.admittedAt.toISOString(), counts: { undecided: 0, in_progress: 0, ready: 0, delivered: 0 }, dealerSupply: 0, oldestUndecidedAt: null };
+      card.counts[f] += 1;
+      if (state === 'dealer_supply') card.dealerSupply += 1;
+      if (state === 'needed' && (!card.oldestUndecidedAt || p.createdAt.toISOString() < card.oldestUndecidedAt)) card.oldestUndecidedAt = p.createdAt.toISOString();
+      cards.set(c.id, card);
+    }
+    const rank = (k: PartsDeskCard) => (k.counts.undecided || k.dealerSupply ? 0 : k.counts.ready ? 1 : 2);
+    return [...cards.values()].sort((a, b) => rank(a) - rank(b) || (a.oldestUndecidedAt ?? a.admittedAt).localeCompare(b.oldestUndecidedAt ?? b.admittedAt));
+  }
+
+  /** Open announcements with their case, for the accident expert (spec section 7: «اعلام قیمت»). */
+  async openNotices(actor: Actor, caseId?: string) {
+    const tenantId = actor.user.tenantId;
+    const parts = await this.db
+      .select({ id: partRequests.id, caseId: partRequests.caseId, description: partRequests.description, quantity: partRequests.quantity, caseNumber: cases.caseNumber })
+      .from(partPriceNotices)
+      .innerJoin(partRequests, eq(partRequests.id, partPriceNotices.partRequestId))
+      .innerJoin(cases, eq(cases.id, partRequests.caseId))
+      .where(and(eq(partPriceNotices.tenantId, tenantId), isNull(partPriceNotices.response), eq(cases.status, 'open'), caseId ? eq(cases.id, caseId) : undefined));
+    const notices = await this.notices(this.db, tenantId, { partIds: parts.map((p) => p.id), openOnly: true });
+    return notices.map((n) => ({ ...n, part: parts.find((p) => p.id === n.partId)! }));
+  }
+
+  async notices(db: DbOrTx, tenantId: string, where: { id?: string; partIds?: string[]; openOnly?: boolean }): Promise<PriceNotice[]> {
+    if (where.partIds && !where.partIds.length) return [];
+    const rows = await db
+      .select({ n: partPriceNotices, by: noticeBy.displayName, answerBy: noticeAnswerBy.displayName })
+      .from(partPriceNotices)
+      .innerJoin(noticeBy, eq(noticeBy.id, partPriceNotices.announcedBy))
+      .leftJoin(noticeAnswerBy, eq(noticeAnswerBy.id, partPriceNotices.respondedBy))
+      .where(and(
+        eq(partPriceNotices.tenantId, tenantId),
+        where.id ? eq(partPriceNotices.id, where.id) : undefined,
+        where.partIds ? inArray(partPriceNotices.partRequestId, where.partIds) : undefined,
+        where.openOnly ? isNull(partPriceNotices.response) : undefined,
+      ))
+      .orderBy(asc(partPriceNotices.announcedAt));
+    return rows.map(({ n, by, answerBy }) => ({
+      id: n.id,
+      partId: n.partRequestId,
+      saleUnitRial: n.saleUnitRial,
+      note: n.note,
+      announcedBy: { id: n.announcedBy, displayName: by },
+      announcedAt: n.announcedAt.toISOString(),
+      response: n.response === 'approved' || n.response === 'instruction' ? n.response : null,
+      instruction: n.instruction,
+      respondedBy: n.respondedBy ? { id: n.respondedBy, displayName: answerBy ?? '' } : null,
+      respondedAt: iso(n.respondedAt),
+      version: n.version,
+    }));
+  }
+
   // ----------------------------------------------------------------- queries
 
   async list(actor: Actor, caseId: string): Promise<Part[]> {
@@ -300,7 +603,27 @@ export class PartsService {
       .where(and(eq(partRequests.tenantId, tenantId), where))
       .orderBy(asc(partRequests.createdAt), asc(partRequests.id));
     const now = Date.now();
-    return rows.map(({ p, d, createdByName }) => ({
+    const ids = rows.map((r) => r.p.id);
+    const [emdad, openNotices, roots] = await Promise.all([
+      this.emdadByPart(this.db, tenantId, ids),
+      this.notices(this.db, tenantId, { partIds: ids, openOnly: true }),
+      this.rootVersions(tenantId, rows.map((r) => r.p.assessmentItemId).filter((x): x is string => !!x)),
+    ]);
+    // «الحاقیه»: the root line was first written in a supplement, or an earlier row of the same root exists.
+    const firstOfRoot = new Map<string, string>();
+    for (const { p } of rows) if (p.assessmentItemId && !firstOfRoot.has(p.assessmentItemId)) firstOfRoot.set(p.assessmentItemId, p.id);
+    return rows.map(({ p, d, createdByName }) => {
+      const e = emdad.get(p.id) ?? null;
+      const flowState = partFlowState({ status: p.status, source: p.source, consumedAt: p.consumedAt, emdadCategory: e?.category });
+      return {
+      flowState,
+      allowedActions: allowedPartActions(flowState),
+      fromSupplement: !!p.assessmentItemId && ((roots.get(p.assessmentItemId) ?? 1) > 1 || firstOfRoot.get(p.assessmentItemId) !== p.id),
+      consumedAt: iso(p.consumedAt),
+      returnedAt: iso(p.returnedAt),
+      returnReason: p.returnReason,
+      emdad: e,
+      priceNotice: openNotices.filter((n) => n.partId === p.id).at(-1) ?? null,
       id: p.id,
       caseId: p.caseId,
       assessmentItemId: p.assessmentItemId,
@@ -337,7 +660,21 @@ export class PartsService {
       createdBy: { id: p.createdBy, displayName: createdByName },
       overdue: p.status === 'ordered' && !!p.etaAt && p.etaAt.getTime() < now,
       version: p.version,
-    }));
+    };
+    });
+  }
+
+  /** Version number of the assessment where each root line was first written. */
+  private async rootVersions(tenantId: string, rootIds: string[]) {
+    const out = new Map<string, number>();
+    if (!rootIds.length) return out;
+    const rows = await this.db
+      .select({ id: assessmentItems.id, versionNo: assessments.versionNo })
+      .from(assessmentItems)
+      .innerJoin(assessments, eq(assessments.id, assessmentItems.assessmentId))
+      .where(and(eq(assessmentItems.tenantId, tenantId), inArray(assessmentItems.id, [...new Set(rootIds)])));
+    for (const r of rows) out.set(r.id, r.versionNo);
+    return out;
   }
 
   // ---------------------------------------------------------------- helpers
@@ -405,7 +742,7 @@ export class PartsService {
       const payer=kase!.coverageType==='golden_card'?'golden_card':'insurer';
       if(quote&&quote.source!==payer)throw badRequest('MARKET_APPROVAL_REQUIRED','پوشش پرونده تغییر کرده است؛ تأیید پرداخت‌کننده فعلی لازم است');
       if(!quote || quote.status!=='approved' || quote.unitPriceRial!==unitPrice || quote.quantity!==p.quantity || quote.supplier!==(input.supplier??'') || quote.validUntil<new Date()) {
-        throw badRequest(aboveApproved?'PRICE_ABOVE_APPROVED':'MARKET_APPROVAL_REQUIRED','قیمت بالاتر از مبلغ تأییدشدهٔ کارت طلایی یا بیمه است؛ مسئول تصادفات باید تأیید پرداخت‌کننده را برای همین مبلغ، تعداد و فروشنده ثبت کند');
+        throw badRequest(aboveApproved?'PRICE_ABOVE_APPROVED':'MARKET_APPROVAL_REQUIRED','قیمت بالاتر از مبلغ تأییدشدهٔ کارت طلایی یا بیمه است؛ کارشناس تصادفات باید تأیید پرداخت‌کننده را برای همین مبلغ، تعداد و فروشنده ثبت کند');
       }
       if(quote.decidedAt && at<quote.decidedAt)throw badRequest('ORDER_BEFORE_APPROVAL','زمان خرید نمی‌تواند پیش از تأیید قیمت باشد');
     }

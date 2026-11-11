@@ -8,7 +8,7 @@ import { DailyReportsService } from '../src/daily-reports/daily-reports.service'
 import { DailyTasksService } from '../src/daily-reports/daily-tasks.service';
 import { buildEmdadXml, buildStockXlsx, emdadRow, type StockRow } from '../src/daily-reports/fixtures';
 import { readWorkbook, writeSheet } from '../src/parts/xlsx';
-import { Client, createHarness, daysAgo, TEST_PASSWORD, type Harness } from './harness';
+import { Client, LEGACY_QC_PERMISSIONS, createHarness, daysAgo, TEST_PASSWORD, type Harness } from './harness';
 
 // Daily parts reports (docs/DAILY_PARTS_FA.md), synthetic files only.
 
@@ -66,7 +66,7 @@ async function need(caseId: string, partNumber: string, quantity = 2): Promise<P
 
 beforeAll(async () => {
   h = await createHarness({ config: { DAILY_REPORT_MAX_BYTES: '3000000' } });
-  [manager, parts, admin, qc, expert] = await Promise.all(['admin', 'parts', 'admin', 'qc', 'expert'].map((u) => h.login(u)));
+  [manager, parts, admin, qc, expert] = await Promise.all([...['admin', 'parts', 'admin'].map((u) => h.login(u)), h.loginAs('narrow', [], LEGACY_QC_PERMISSIONS), h.login('expert')]);
   owner = await h.loginAs('daily-owner', ['service_manager']);
   await h.db.db.update(users).set({ isOwner: true }).where(eq(users.username, 'daily-owner'));
 });
@@ -207,7 +207,7 @@ describe('stock snapshot, options and reservations', () => {
     expect(results.find((r) => r.status === 409)!.body.code).toBe('INSUFFICIENT_STOCK');
   });
 
-  it('records issue, release, cancel and reflection as separate audited steps without double deduction', async () => {
+  it('records issue, release and cancel as audited steps; deduction stops only with «پایان کار», never by hand', async () => {
     const list = (await parts.get(`/stock/reservations?caseId=${caseA.id}`)).body.items as { id: string; version: number; fullStockCode: string }[];
     const r1 = list.find((r) => r.fullStockCode === '0012345601')!;
     const r2 = list.find((r) => r.fullStockCode === '0012345602')!;
@@ -217,25 +217,27 @@ describe('stock snapshot, options and reservations', () => {
     const issued = await parts.post(`/stock/reservations/${r1.id}/actions`, { action: 'issue', expectedVersion: r1.version });
     expect(issued.body.status).toBe('issued');
     expect((await parts.post(`/stock/reservations/${r1.id}/actions`, { action: 'issue', expectedVersion: issued.body.version })).status).toBe(409);
-    // Still deducted until the stock report reflects the issue.
+    // Handed over to an open case: still deducted (spec section 7).
     expect((await parts.get('/stock/options?q=0012345601')).body.items[0]).toMatchObject({ issuedUnreflected: '1.5', available: '0' });
-    expect((await parts.post(`/stock/reservations/${r1.id}/actions`, { action: 'reflect', expectedVersion: issued.body.version })).body.code).toBe('REPORT_BEFORE_ISSUE');
+    // The manual reflection step is gone: it happens automatically with «پایان کار».
+    expect((await parts.post(`/stock/reservations/${r1.id}/actions`, { action: 'reflect', expectedVersion: issued.body.version })).body.code).toBe('REFLECT_AUTOMATIC');
     expect((await parts.get('/stock/reservations?reconcile=true')).body.items.map((r: { id: string }) => r.id)).toContain(r1.id);
 
-    // The next report (taken after the issue) shows the reduced quantity.
+    // A new report does not stop the deduction while the case is open (no double counting either way).
     const next = await previewOf('stock', buildStockXlsx([sku('00123456', '01', { 'موجودي': '0.5', 'قيمت فروش': '1600' }), ...family('00123456').slice(1)]));
     expect(next.counts).toMatchObject({ changed: 1, unchanged: 7, missing: 3 });
     const pub = await apply(next.id, soon(1));
     expect(pub.status).toBe(201);
     expect(pub.body).toMatchObject({ counts: { published: 8, carried: 3 }, reconciliation: 1 });
-    const reflected = await parts.post(`/stock/reservations/${r1.id}/actions`, { action: 'reflect', expectedVersion: issued.body.version });
-    expect(reflected.status).toBe(201);
-    expect((await parts.get('/stock/options?q=0012345601')).body.items[0]).toMatchObject({ reported: '0.5', issuedUnreflected: '0', available: '0', salePrice: '1600' });
-    // The reservation keeps the price of the report it was made from.
-    expect(reflected.body.unitSalePrice).toBe('1500');
+    expect((await parts.get('/stock/options?q=0012345601')).body.items[0]).toMatchObject({ reported: '0.5', issuedUnreflected: '1.5', salePrice: '1600' });
     // Partial report: codes missing today keep their last values, labelled as carried.
     expect((await parts.get('/stock/options?q=00999999')).body.items[0]).toMatchObject({ reported: '0.5' });
-    expect((await parts.post(`/stock/reservations/${r1.id}/actions`, { action: 'cancel', expectedVersion: reflected.body.version, reason: 'اشتباه' })).status).toBe(409);
+    // An issue recorded by mistake can still be undone while the case is open.
+    const undone = await parts.post(`/stock/reservations/${r1.id}/actions`, { action: 'cancel', expectedVersion: issued.body.version, reason: 'اشتباه' });
+    expect(undone.status).toBe(201);
+    expect(undone.body.status).toBe('cancelled');
+    // The reservation keeps the price of the report it was made from.
+    expect(undone.body.unitSalePrice).toBe('1500');
   });
 
   it('never lets an older file replace newer stock, and flags shortfalls without deleting reservations', async () => {

@@ -1,53 +1,60 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, inArray, ne } from 'drizzle-orm';
-import type { AlertResponseInput, CaseAlert } from '@manage/shared';
+import { and, eq, inArray, notInArray } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import { alertSettingsOf, DEFAULT_ALERT_SETTINGS, openAlerts, type AlertResponseInput, type AlertSettings, type AlertSettingsInput, type CaseAlert } from '@manage/shared';
 import { AuditService } from '../audit/audit.service';
 import type { Actor } from '../auth/auth.types';
 import { badRequest, conflict, notFound } from '../common/errors';
 import { newId } from '../common/ids';
 import { DATABASE, type DatabaseHandle } from '../db/database';
 import { caseAlertResponses, cases, partRequests, tenants, users, vehicles } from '../db/schema';
-import { FinanceService } from '../finance/finance.service';
 
-/** Owner decision 2026-11-05: 50,000,000 toman = 500,000,000 Rial. */
-export const DEFAULT_PARTS_ALERT_THRESHOLD_RIAL = 500_000_000;
+/** Spec decision 1 (2026-11-10): 100,000,000 toman = 1,000,000,000 Rial. */
+export const DEFAULT_PARTS_ALERT_THRESHOLD_RIAL = DEFAULT_ALERT_SETTINGS.partsAlertThresholdRial;
+/** Lines that no longer go into the vehicle (cancelled, returned) do not count. */
+const INACTIVE_PART_STATUSES = ['cancelled', 'returned'];
+const responsibleUser = alias(users, 'alert_responsible');
 
 /**
- * Non-blocking alerts for the accident coordinator (owner rule 2026-11-05):
- * money never stops work; Manage asks, the coordinator answers, the answer is
- * recorded. Two kinds:
- *  - advance: the customer pays a share and no advance is recorded (level 1),
- *    or a supplement raised the cost after an advance (level 2);
- *  - parts_amount: the parts total crossed the threshold; each further
- *    multiple of the threshold is a new level and asks again.
+ * Non-blocking cost alerts for the accident expert (spec section 9): money never
+ * stops work. Manage asks one question, the expert records «گرفتم / نگرفتم /
+ * لازم نیست» and the answer is kept. The former advance approval flow (expert
+ * proposes, service manager approves, cashier confirms) is retired.
+ *  - parts_amount: the parts total crossed N × threshold;
+ *  - expensive_part: a personal-coverage line at or above the per-line threshold.
  */
 @Injectable()
 export class AlertsService {
   constructor(
     @Inject(DATABASE) private readonly handle: DatabaseHandle,
     private readonly audit: AuditService,
-    private readonly finance: FinanceService,
   ) {}
 
   private get db() {
     return this.handle.db;
   }
 
-  async threshold(tenantId: string): Promise<number> {
+  async alertSettings(tenantId: string): Promise<AlertSettings> {
     const [t] = await this.db.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId));
-    const v = t?.settings?.partsAlertThresholdRial;
-    return typeof v === 'number' && v > 0 ? v : DEFAULT_PARTS_ALERT_THRESHOLD_RIAL;
+    return alertSettingsOf(t?.settings as Partial<Record<keyof AlertSettings, unknown>> | undefined);
+  }
+
+  async threshold(tenantId: string): Promise<number> {
+    return (await this.alertSettings(tenantId)).partsAlertThresholdRial;
   }
 
   async settings(actor: Actor) {
-    return { partsAlertThresholdRial: await this.threshold(actor.user.tenantId), defaultRial: DEFAULT_PARTS_ALERT_THRESHOLD_RIAL };
+    const current = await this.alertSettings(actor.user.tenantId);
+    return { ...current, defaults: DEFAULT_ALERT_SETTINGS, defaultRial: DEFAULT_ALERT_SETTINGS.partsAlertThresholdRial };
   }
 
-  async saveSettings(actor: Actor, partsAlertThresholdRial: number) {
+  async saveSettings(actor: Actor, input: AlertSettingsInput) {
     await this.db.transaction(async (tx) => {
-      const [t] = await tx.select().from(tenants).where(eq(tenants.id, actor.user.tenantId));
-      const before = t!.settings ?? {};
-      const after = { ...before, partsAlertThresholdRial };
+      const [t] = await tx.select().from(tenants).where(eq(tenants.id, actor.user.tenantId)).for('update');
+      const before = (t!.settings ?? {}) as Record<string, unknown>;
+      const after: Record<string, unknown> = { ...before, partsAlertThresholdRial: input.partsAlertThresholdRial };
+      if (input.expensivePartThresholdRial !== undefined) after.expensivePartThresholdRial = input.expensivePartThresholdRial;
+      if (input.emdadLateDays !== undefined) after.emdadLateDays = input.emdadLateDays;
       await tx.update(tenants).set({ settings: after }).where(eq(tenants.id, actor.user.tenantId));
       await this.audit.record(tx, actor, { entityType: 'tenant', entityId: actor.user.tenantId, action: 'settings.alerts_updated', before, after });
     });
@@ -58,33 +65,40 @@ export class AlertsService {
   async list(actor: Actor, caseId?: string): Promise<CaseAlert[]> {
     const tenantId = actor.user.tenantId;
     const open = await this.db
-      .select({ id: cases.id, caseNumber: cases.caseNumber, coverageType: cases.coverageType, plate: vehicles.plate, model: vehicles.model })
+      .select({ id: cases.id, caseNumber: cases.caseNumber, coverageType: cases.coverageType, plate: vehicles.plate, model: vehicles.model, responsibleId: responsibleUser.id, responsibleName: responsibleUser.displayName })
       .from(cases)
       .innerJoin(vehicles, eq(vehicles.id, cases.vehicleId))
+      .leftJoin(responsibleUser, eq(responsibleUser.id, cases.responsibleUserId))
       .where(and(eq(cases.tenantId, tenantId), eq(cases.status, 'open'), caseId ? eq(cases.id, caseId) : undefined));
     if (!open.length) return [];
     const ids = open.map((c) => c.id);
-    const [answers, partRows, threshold] = await Promise.all([
+    const [answers, partRows, settings] = await Promise.all([
       this.db.select().from(caseAlertResponses).where(and(eq(caseAlertResponses.tenantId, tenantId), inArray(caseAlertResponses.caseId, ids))),
       this.db
-        .select({ caseId: partRequests.caseId, quantity: partRequests.quantity, unit: partRequests.unitPriceRial, approved: partRequests.approvedUnitPriceRial })
+        .select({ caseId: partRequests.caseId, description: partRequests.description, quantity: partRequests.quantity, sale: partRequests.salePriceRial, unit: partRequests.unitPriceRial, approved: partRequests.approvedUnitPriceRial })
         .from(partRequests)
-        .where(and(eq(partRequests.tenantId, tenantId), inArray(partRequests.caseId, ids), ne(partRequests.status, 'cancelled'))),
-      this.threshold(tenantId),
+        .where(and(eq(partRequests.tenantId, tenantId), inArray(partRequests.caseId, ids), notInArray(partRequests.status, INACTIVE_PART_STATUSES)))
+        .orderBy(partRequests.createdAt),
+      this.alertSettings(tenantId),
     ]);
-    const answered = (id: string, kind: string, level: number) => answers.some((a) => a.caseId === id && a.kind === kind && a.level === level);
     const alerts: CaseAlert[] = [];
     for (const c of open) {
-      const base = { caseId: c.id, caseNumber: c.caseNumber, plate: c.plate, vehicleLabel: c.model ?? '', coverageType: c.coverageType };
-      const gate = await this.finance.gate(this.db, tenantId, c.id, 0);
-      const advanceLevel = gate.reason === 're_approval_required' ? 2 : gate.reason === 'advance_missing' || gate.reason === 'shares_unknown' ? 1 : 0;
-      if (advanceLevel && !answered(c.id, 'advance', advanceLevel)) {
-        alerts.push({ ...base, kind: 'advance', level: advanceLevel, totalRial: null, thresholdRial: null });
-      }
-      const total = partRows.filter((p) => p.caseId === c.id).reduce((n, p) => n + (p.unit ?? p.approved ?? 0) * p.quantity, 0);
-      const level = Math.floor(total / threshold);
-      if (level >= 1 && !answered(c.id, 'parts_amount', level)) {
-        alerts.push({ ...base, kind: 'parts_amount', level, totalRial: total, thresholdRial: threshold });
+      const lines = partRows.filter((p) => p.caseId === c.id).map((p) => ({ description: p.description, quantity: p.quantity, unitRial: p.sale ?? p.unit ?? p.approved ?? null }));
+      const answered = (kind: string, level: number) => answers.some((a) => a.caseId === c.id && a.kind === kind && a.level === level);
+      for (const a of openAlerts({ coverageType: c.coverageType, lines, settings, answered })) {
+        alerts.push({
+          caseId: c.id,
+          caseNumber: c.caseNumber,
+          plate: c.plate,
+          vehicleLabel: c.model ?? '',
+          coverageType: c.coverageType,
+          kind: a.kind,
+          level: a.level,
+          totalRial: a.totalRial,
+          thresholdRial: a.thresholdRial,
+          partDescription: a.partDescription,
+          responsible: c.responsibleId ? { id: c.responsibleId, displayName: c.responsibleName ?? '' } : null,
+        });
       }
     }
     return alerts;

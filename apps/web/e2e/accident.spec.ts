@@ -73,7 +73,7 @@ test('supervisor: create a golden-card case, run a repair activity through a blo
   await expect(page.locator('.timeline')).toContainText('سرپرست نمونه');
 
   // Search by plate in loose form finds the case.
-  await page.getByRole('link', { name: 'پرونده‌های تصادفی' }).click();
+  await page.getByRole('link', { name: 'پرونده‌ها', exact: true }).click();
   await page.getByLabel('جست‌وجوی پرونده').fill('68ط421');
   await page.waitForURL(/q=/);
   await expect(page.locator('tbody tr')).toHaveCount(1);

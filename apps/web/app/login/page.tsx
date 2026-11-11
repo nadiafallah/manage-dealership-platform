@@ -6,6 +6,9 @@ import Link from 'next/link';
 import { api, ApiError, errorMessage } from '@/lib/api';
 import { toLatinDigits, toPersianDigits, type Me } from '@manage/shared';
 import {InstallButton} from '@/components/InstallApp';
+import { AppIcon } from '@/components/AppIcon';
+import { WorkshopBackdrop } from '@/components/WorkshopScene';
+import { Dialog } from '@/components/Dialog';
 
 type LoginSubmission = { busy: boolean; setBusy: (busy: boolean) => void };
 
@@ -163,22 +166,23 @@ function TechnicianLoginForm({ busy, setBusy }: LoginSubmission) {
 
   return (
     <form className="form" method="post" onSubmit={submit}>
-      <label className="field">
+      <label className="field lg-field">
         <span>نام کاربری</span>
-        <input
+        <span className="lg-input-wrap"><AppIcon name="idcard" /><input
           className="input ltr-input"
           name="username"
           value={username}
-          placeholder="نام کاربری کارمند"
+          placeholder="a.rezaei"
           autoComplete="username"
           autoCapitalize="none"
           spellCheck={false}
           onChange={event => setUsername(event.target.value)}
           required
-        />
+        /></span>
       </label>
       <fieldset className="login-pin">
-        <legend>رمز ۴ رقمی</legend>
+        <legend>پین چهاررقمی</legend>
+        <div className="login-pin-row"><span className="lg-lock" aria-hidden="true"><AppIcon name="lock" /></span>
         <div className="login-pin-grid" dir="ltr">
           {digits.map((digit, index) => (
             <input
@@ -216,7 +220,7 @@ function TechnicianLoginForm({ busy, setBusy }: LoginSubmission) {
               required
             />
           ))}
-        </div>
+        </div></div>
       </fieldset>
       {needsDevice && (
         <label className="field">
@@ -225,23 +229,23 @@ function TechnicianLoginForm({ busy, setBusy }: LoginSubmission) {
         </label>
       )}
       {error && <div className="callout callout-red" role="alert">{error}</div>}
-      <button className="btn btn-primary" type="submit" disabled={busy}>
-        {busy ? 'در حال ورود…' : 'ورود به کارتابل'}
+      <button className="btn btn-primary lg-cta" type="submit" disabled={busy}>
+        <AppIcon name="login" />{busy ? 'در حال ورود…' : 'ورود به میز کار'}
       </button>
-      <p className="login-help muted small">رمز را فراموش کرده‌اید؟ از مالک یا مدیر سیستم بخواهید آن را بازنشانی کند.</p>
     </form>
   );
 }
 
 const loginModes = [
   { id: 'technician', label: 'ورود کارکنان' },
-  { id: 'staff', label: 'ورود مالک و مدیر سیستم' },
+  { id: 'staff', label: 'ورود مدیر سیستم' },
 ] as const;
 
 function LoginPanels() {
   const params = useSearchParams();
   const [mode, setMode] = useState(params.get('mode') === 'staff' || params.get('mode') === 'management' ? 'staff' : 'technician');
   const [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState<'guide' | 'trouble' | null>(null);
   const tabs = useRef<Array<HTMLButtonElement | null>>([]);
 
   function handleTabKey(event: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -259,63 +263,102 @@ function LoginPanels() {
     tabs.current[next]?.focus();
   }
 
+  const door = mode === 'technician'
+    ? { title: 'ورود کارکنان', sub: 'برای ادامه، نام کاربری و پین چهاررقمی خود را وارد کنید.', icon: 'user' as const }
+    : { title: 'ورود مدیر سیستم', sub: 'ایمیل، رمز و کد شش‌رقمی Google Authenticator.', icon: 'gear' as const };
   return (
-    <div className="entry-login-body">
-      <header className="entry-login-heading">
-        <h1>خوش آمدید</h1>
-        <p className="muted">برای شروع کار امروز وارد شوید.</p>
+    <div className="entry-login-body lg-card">
+      <header className="lg-head">
+        <span className="lg-ico" aria-hidden="true"><AppIcon name={door.icon} /></span>
+        <div><h1>{door.title}</h1><p>{door.sub}</p></div>
       </header>
-      <div className="login-tabs" role="tablist" aria-label="نوع ورود">
-        {loginModes.map(({ id, label }, index) => (
-          <button
-            key={id}
-            ref={tab => { tabs.current[index] = tab; }}
-            id={`login-tab-${id}`}
-            type="button"
-            role="tab"
-            tabIndex={mode === id ? 0 : -1}
-            aria-selected={mode === id}
-            aria-controls={`login-panel-${id}`}
-            aria-disabled={busy && mode !== id}
-            onClick={() => { if (!busy) setMode(id); }}
-            onKeyDown={event => handleTabKey(event, index)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
       <div id="login-panel-staff" role="tabpanel" aria-labelledby="login-tab-staff" hidden={mode !== 'staff'}>
         <StaffLoginForm active={mode === 'staff'} busy={busy} setBusy={setBusy} />
       </div>
       <div id="login-panel-technician" role="tabpanel" aria-labelledby="login-tab-technician" hidden={mode !== 'technician'}>
         {mode === 'technician' && <TechnicianLoginForm busy={busy} setBusy={setBusy} />}
       </div>
+      <div className="door-list">
+        <div className="login-tabs" role="tablist" aria-label="نوع ورود">
+          {loginModes.map(({ id, label }, index) => (
+            <button
+              key={id}
+              ref={tab => { tabs.current[index] = tab; }}
+              id={`login-tab-${id}`}
+              type="button"
+              role="tab"
+              tabIndex={mode === id ? 0 : -1}
+              aria-selected={mode === id}
+              aria-controls={`login-panel-${id}`}
+              aria-disabled={busy && mode !== id}
+              onClick={() => { if (!busy) setMode(id); }}
+              onKeyDown={event => handleTabKey(event, index)}
+            >
+              <AppIcon name={id === 'technician' ? 'user' : 'gear'} /><span>{label}</span>{mode === id ? <AppIcon name="check" className="door-on" /> : <AppIcon name="chevron-left" className="door-go" />}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="door-row" onClick={() => setInfo('guide')}><AppIcon name="book" /><span>راهنمای ورود</span><AppIcon name="chevron-left" className="door-go" /></button>
+        <button type="button" className="door-row" onClick={() => setInfo('trouble')}><AppIcon name="help" /><span>مشکل در ورود؟</span><AppIcon name="chevron-left" className="door-go" /></button>
+      </div>
       {/* Installing the app is the same for every sign-in path. */}
       <div className="install-login"><InstallButton/></div>
+      <Dialog open={info === 'guide'} title="راهنمای ورود" onClose={() => setInfo(null)} footer={<button type="button" className="btn btn-primary" onClick={() => setInfo(null)}>متوجه شدم</button>}>
+        <ol className="lg-guide">
+          <li><b>کارکنان</b> (کارشناس تصادفات، مسئول قطعات، تکنسین، مدیر خدمات): نام کاربری و پین چهاررقمی که مدیر سیستم به شما داده است.</li>
+          <li>بار اول روی هر دستگاه، رمز ثبت دستگاه را هم از مدیر سیستم بگیرید؛ دفعه‌های بعد لازم نیست.</li>
+          <li><b>مدیر سیستم</b> از در «ورود مدیر سیستم» با ایمیل، رمز و کد Google Authenticator وارد می‌شود.</li>
+          <li>بعد از ورود، هر نفر مستقیم به میز کار خودش می‌رود.</li>
+        </ol>
+      </Dialog>
+      <Dialog open={info === 'trouble'} title="مشکل در ورود؟" onClose={() => setInfo(null)} footer={<button type="button" className="btn btn-primary" onClick={() => setInfo(null)}>بستن</button>}>
+        <ul className="lg-guide">
+          <li>پین را فراموش کرده‌اید: مدیر سیستم از بخش «کارکنان» آن را تازه می‌کند.</li>
+          <li>پنج بار اشتباه: حساب ۱۵ دقیقه قفل می‌شود؛ بعد دوباره امتحان کنید.</li>
+          <li>«این دستگاه هنوز ثبت نشده است»: رمز ثبت دستگاه را از مدیر سیستم بگیرید.</li>
+          <li>مدیر سیستمی که به Google Authenticator دسترسی ندارد: مالک می‌تواند لینک بازیابی بسازد.</li>
+        </ul>
+      </Dialog>
     </div>
   );
 }
 
+/**
+ * Sign-in (spec §3, §12; owner reference «manage-cinematic»): a dark, cinematic workshop
+ * with the case folder on the bench on the left, and a warm ivory form on the right.
+ * The artwork is CSS/SVG with real text, so nothing is baked into an image.
+ */
 export default function LoginPage() {
   return (
-    <main className="login entry-login">
-      <div className="side">
-        <div className="sx-stage" aria-hidden="true"><i /><i /><i /><i /></div>
-        <span className="brand-lockup" role="img" aria-label="Manage by HEDAX">
-          <img src="/brand/manage-wordmark-dark.svg" alt="" width={124} height={30} />
-          <span className="brand-by" aria-hidden="true">by HEDAX</span>
-        </span>
-        <div className="entry-story">
-          <span className="entry-line" aria-hidden="true" />
-          <div className="claim">هر خودرو،<br /> یک مسیر روشن.</div>
-          <p>منیج پیگیری می‌کند، شما تصمیم می‌گیرید.</p>
-          <p className="entry-description">سامانهٔ یکپارچهٔ مدیریت عملیات نمایندگی‌های خودرو</p>
-        </div>
-        <p className="entry-signature"><span>نمایندگی ۱۳۰۷ ایران‌خودرو حسینی · قم</span><span>محصولی از هداکس</span></p>
-      </div>
+    <main className="login entry-login lg-root">
       <Suspense>
         <LoginPanels />
       </Suspense>
+      <div className="side lg-art" aria-label="Manage by HEDAX">
+        <div className="lg-scene" aria-hidden="true">
+          <WorkshopBackdrop className="lg-backdrop" />
+          <span className="lg-glow" />
+          <span className="lg-bench" />
+          <div className="lg-folder">
+            <span className="lg-papers"><i /><i /><i /></span>
+            <span className="lg-clip" />
+            <div className="lg-cover">
+              <svg viewBox="0 0 120 40" className="lg-car-line"><path d="M6 30c8-1 12-6 18-10 10-7 22-12 38-12 16 0 26 6 34 12l12 4c4 1 6 4 6 7" fill="none" stroke="#C9A85A" strokeWidth="2.2" strokeLinecap="round" /><path d="M30 31h60" stroke="#C9A85A" strokeWidth="2" strokeLinecap="round" /></svg>
+              <span className="lg-cover-title">پرونده خودرو</span>
+              <span className="lg-cover-rule" />
+              <span className="lg-badge">HEDAX</span>
+            </div>
+          </div>
+        </div>
+        <div className="lg-brand">
+          <span className="lg-logo"><span className="brand-slashes"><i /><i /></span><span className="lg-word">Manage</span></span>
+          <span className="lg-by">by <b>HEDAX</b></span>
+          <p className="lg-claim">هر خودرو، یک مسیر روشن.</p>
+          <p className="lg-sub">منیج پیگیری می‌کند، شما تصمیم می‌گیرید.</p>
+          <span className="lg-rule" />
+        </div>
+        <p className="entry-signature"><span>نمایندگی ۱۳۰۷ ایران‌خودرو · قم</span><span>یک محصول هداکس</span></p>
+      </div>
     </main>
   );
 }

@@ -6,6 +6,7 @@ import {
   createBlockerSchema,
   createCaseSchema,
   createTaskSchema,
+  repairPlanStepsSchema,
   resolveBlockerSchema,
   taskActionSchema,
   updateCaseSchema,
@@ -16,6 +17,7 @@ import {
   type CreateBlockerInput,
   type CreateCaseInput,
   type CreateTaskInput,
+  type RepairPlanStepsInput,
   type ResolveBlockerInput,
   type TaskActionInput,
   type UpdateCaseInput,
@@ -93,6 +95,17 @@ export class CasesController {
     @Body(new ZodPipe(createTaskSchema)) body: CreateTaskInput,
   ) {
     return this.tasks.create(actor, id, body);
+  }
+
+  /** Repair plan: several ordered steps (bay, person, days, wage) saved together. Wages need wage.manage. */
+  @Post(':id/repair-plan/steps')
+  @RequirePermissions('task.manage')
+  addPlanSteps(
+    @CurrentActor() actor: Actor,
+    @IdParam() id: string,
+    @Body(new ZodPipe(repairPlanStepsSchema)) body: RepairPlanStepsInput,
+  ) {
+    return this.tasks.addPlanSteps(actor, id, body);
   }
 
   @Post(':id/blockers')

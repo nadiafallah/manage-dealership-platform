@@ -51,6 +51,9 @@ export default defineConfig({
         LOGIN_RATE_LIMIT: '200',
         // Reminders depend on the time of day; their browser test mocks the inbox.
         DAILY_SCHEDULER: 'false',
+        // The browser suite counts the five base demo cases; screenshots of a full
+        // workshop use DEMO_FLEET=true (docs/TEST_REPORT.md).
+        DEMO_FLEET: process.env.DEMO_FLEET ?? 'false',
         // Synthetic key allows the manual staff-invitation fallback to use
         // the real API without enabling personal-mode login for demo roles.
         AUTH_TOKEN_SECRET: 'e2e-synthetic-only-authenticator-key',

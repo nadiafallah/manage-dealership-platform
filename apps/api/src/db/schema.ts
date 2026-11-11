@@ -3,6 +3,7 @@ import {
   type AnyPgColumn,
   bigint,
   bigserial,
+  serial,
   boolean,
   customType,
   index,
@@ -1255,6 +1256,8 @@ export const reminders = pgTable('reminders', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   senderUserId: uuid('sender_user_id').notNull().references(() => users.id),
   caseId: uuid('case_id').references(() => cases.id),
+  // Spec §9: a reminder is about a car and, optionally, one part line of it (migration 0022).
+  partRequestId: uuid('part_request_id').references(() => partRequests.id),
   plate: text('plate'),
   body: text('body').notNull(),
   urgency: text('urgency').notNull().default('normal'),
@@ -1326,4 +1329,45 @@ export const caseResponsibilityPeriods = pgTable('case_responsibility_periods', 
   index('case_responsibility_case_idx').on(t.caseId, t.startedAt),
   index('case_responsibility_tenant_user_idx').on(t.tenantId, t.userId),
   uniqueIndex('case_responsibility_open_uq').on(t.caseId).where(sql`${t.endedAt} is null`),
+]);
+
+/**
+ * Previous values of every row changed by migration 0020 (six roles: legacy role
+ * codes, deactivated cashier-only accounts, reset role templates, reminder target
+ * roles). Read by the down script to restore them exactly; never written by the app.
+ */
+export const roleMigrationLog = pgTable('role_migration_log', {
+  id: serial('id').primaryKey(),
+  migration: text('migration').notNull(),
+  entity: text('entity').notNull(),
+  entityId: uuid('entity_id').notNull(),
+  tenantId: uuid('tenant_id').notNull(),
+  before: jsonb('before').notNull(),
+  after: jsonb('after').notNull(),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});
+
+/**
+ * «اعلام قیمت» (spec section 7): the parts clerk announces the sale price of one
+ * line; the accident expert confirms or gives another instruction. Never blocks.
+ */
+export const partPriceNotices = pgTable('part_price_notices', {
+  id: uuid('id').primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  caseId: uuid('case_id').notNull().references(() => cases.id),
+  partRequestId: uuid('part_request_id').notNull().references(() => partRequests.id),
+  saleUnitRial: bigint('sale_unit_rial', { mode: 'number' }).notNull(),
+  note: text('note'),
+  announcedBy: uuid('announced_by').notNull().references(() => users.id),
+  announcedAt: ts('announced_at').notNull().defaultNow(),
+  // null = open | approved | instruction
+  response: text('response'),
+  instruction: text('instruction'),
+  respondedBy: uuid('responded_by').references(() => users.id),
+  respondedAt: ts('responded_at'),
+  isTest: boolean('is_test').notNull().default(false),
+  version: integer('version').notNull().default(1),
+}, (t) => [
+  index('part_price_notices_case_idx').on(t.tenantId, t.caseId),
+  index('part_price_notices_part_idx').on(t.partRequestId),
 ]);

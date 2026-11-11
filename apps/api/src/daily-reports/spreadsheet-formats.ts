@@ -4,7 +4,7 @@
 // entities, no network, no formulas. Only two known exporter defects are
 // repaired, and each repair is counted in the diagnostics.
 
-export type SheetFormat = 'xlsx' | 'spreadsheetml' | 'xls_binary' | 'unknown';
+export type SheetFormat = 'xlsx' | 'spreadsheetml' | 'html_table' | 'xls_binary' | 'unknown';
 
 export function detectFormat(data: Uint8Array): SheetFormat {
   if (data[0] === 0x50 && data[1] === 0x4b && data[2] === 0x03 && data[3] === 0x04) return 'xlsx';
@@ -12,12 +12,14 @@ export function detectFormat(data: Uint8Array): SheetFormat {
   // trimStart also removes a byte-order mark (U+FEFF is whitespace for it).
   const head = Buffer.from(data.subarray(0, 4096)).toString('utf8').trimStart();
   if (head.startsWith('<?xml') && /<Workbook\b/.test(head) && /urn:schemas-microsoft-com:office:spreadsheet/.test(head)) return 'spreadsheetml';
+  // The business system's stock report is an HTML table saved with an .xls extension (spec section 11).
+  if (/^<(!doctype\s+html|html|head|meta|body|table|style)\b/i.test(head) && /<table\b/i.test(Buffer.from(data.subarray(0, 262_144)).toString('latin1'))) return 'html_table';
   return 'unknown';
 }
 
-export const FORMAT_ERRORS: Record<Exclude<SheetFormat, 'xlsx' | 'spreadsheetml'>, string> = {
+export const FORMAT_ERRORS: Record<Exclude<SheetFormat, 'xlsx' | 'spreadsheetml' | 'html_table'>, string> = {
   xls_binary: 'فایل XLS باینری (Excel 97-2003) هنوز پشتیبانی نمی‌شود؛ خروجی XML یا XLSX همان گزارش را بارگذاری کنید',
-  unknown: 'قالب فایل شناخته نشد؛ فقط XLSX و XML Spreadsheet (خروجی امداد ویژه با پسوند xls) پذیرفته می‌شوند',
+  unknown: 'قالب فایل شناخته نشد؛ فقط XLSX، جدول HTML با پسوند xls (گزارش موجودی کسب‌وکار) و XML Spreadsheet (خروجی امداد ویژه) پذیرفته می‌شوند',
 };
 
 export class SpreadsheetError extends Error {}
@@ -116,4 +118,71 @@ export function readSpreadsheetML(data: Uint8Array, opts: { sheet?: string; limi
   }
 
   return { sheetName: decode(chosen[1]!), sheetNames: sheets.map((m) => decode(m[1]!)), diagnostics, rows };
+}
+
+// ------------------------------------------------------------- HTML table
+
+const HTML_ENTITY: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', zwnj: '\u200c', zwj: '\u200d', lrm: '', rlm: '' };
+const decodeHtml = (s: string) =>
+  s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (all, e: string) => {
+    if (e[0] === '#') {
+      const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : Number(e.slice(1));
+      return Number.isFinite(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '';
+    }
+    return HTML_ENTITY[e.toLowerCase()] ?? all;
+  });
+
+/** Charset declared in the first bytes (meta), otherwise UTF-8. Unknown labels fall back to UTF-8. */
+function decodeText(data: Uint8Array): { text: string; charset: string } {
+  const head = Buffer.from(data.subarray(0, 4096)).toString('latin1');
+  const declared = /<meta[^>]+charset\s*=\s*["']?([\w-]+)/i.exec(head)?.[1]?.toLowerCase() ?? 'utf-8';
+  try {
+    return { text: new TextDecoder(declared).decode(data), charset: declared };
+  } catch {
+    return { text: Buffer.from(data).toString('utf8'), charset: 'utf-8' };
+  }
+}
+
+/**
+ * Reads a table from an HTML file saved as .xls (the business system's stock
+ * report). Leading whitespace and a byte-order mark are trimmed; scripts and
+ * comments are ignored; colspan is honoured; cell text has tags removed and
+ * entities decoded. The table whose first rows contain «کد کالا» is chosen
+ * (Arabic ي/ك allowed), otherwise the largest one. Columns are found later by
+ * their normalized names, never by position.
+ */
+export function readHtmlTable(data: Uint8Array, opts: { limits?: Partial<ReaderLimits>; headerProbe?: (cell: string) => boolean } = {}) {
+  const limits = { ...DEFAULT_LIMITS, ...opts.limits };
+  const started = Date.now();
+  const decoded = decodeText(data);
+  let text = decoded.text;
+  const lead = /^\s*/.exec(text)![0].length;
+  const diagnostics = { leadingWhitespace: lead, charset: decoded.charset, tables: 0 };
+  text = text.slice(lead).replace(/<!--[\s\S]*?-->/g, '').replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '');
+  const tables = [...text.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table\s*>/gi)].map((m) => m[1]!);
+  diagnostics.tables = tables.length;
+  if (!tables.length) throw new SpreadsheetError('جدولی در فایل پیدا نشد');
+  const parseRows = (body: string): string[][] => {
+    const out: string[][] = [];
+    for (const r of body.matchAll(/<tr\b[^>]*>([\s\S]*?)(?=<tr\b|<\/tr\s*>|<\/tbody|<\/thead|$)/gi)) {
+      if (out.length >= limits.maxRows) throw new SpreadsheetError(`تعداد ردیف‌ها بیش از ${limits.maxRows} است`);
+      if (out.length % 1000 === 0 && Date.now() - started > limits.maxMillis) throw new SpreadsheetError('خواندن فایل بیش از حد طول کشید');
+      const cells: string[] = [];
+      for (const c of r[1]!.matchAll(/<t([dh])\b([^>]*)>([\s\S]*?)(?=<t[dh]\b|<\/tr\s*>|$)/gi)) {
+        const raw = c[3]!.replace(/<\/t[dh]\s*>[\s\S]*$/i, '');
+        const value = decodeHtml(raw.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+        if (value.length > limits.maxCellChars) throw new SpreadsheetError('متن یک خانه بیش از حد طولانی است');
+        const span = Math.min(Number(/\bcolspan\s*=\s*["']?(\d+)/i.exec(c[2]!)?.[1] ?? 1) || 1, limits.maxColumns);
+        cells.push(value);
+        for (let i = 1; i < span; i++) cells.push('');
+        if (cells.length > limits.maxColumns) throw new SpreadsheetError(`تعداد ستون‌ها بیش از ${limits.maxColumns} است`);
+      }
+      out.push(cells);
+    }
+    return out;
+  };
+  const parsed = tables.map(parseRows);
+  const probe = opts.headerProbe;
+  const chosen = (probe && parsed.find((rows) => rows.slice(0, 20).some((r) => r.some(probe)))) ?? parsed.reduce((a, b) => (b.length > a.length ? b : a));
+  return { sheetName: 'جدول HTML', sheetNames: parsed.map((_, i) => `جدول ${i + 1}`), diagnostics, rows: chosen };
 }

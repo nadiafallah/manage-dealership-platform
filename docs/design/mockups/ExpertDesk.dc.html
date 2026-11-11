@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>میز کار کارشناس تصادفات</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F3F1EC}
+a{color:#0E5F66}a:hover{color:#0A464C}
+.dk *{box-sizing:border-box}
+.srch{display:flex;align-items:center;gap:10px;height:44px;padding:0 16px;border-radius:14px;background:#FFFEFB;border:1px solid #E4E0D7;color:#6A707B;font-size:14px;flex:0 1 420px;min-width:220px;box-shadow:0 1px 2px rgba(21,24,29,.04)}
+.srch input{border:0;outline:0;background:transparent;font:500 14px Vazirmatn,sans-serif;color:#15181D;flex:1;min-width:0}
+.srch kbd{font:600 11px Vazirmatn,sans-serif;color:#7C828C;border:1px solid #E4E0D7;border-radius:6px;padding:1px 6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{height:38px;padding:0 16px;border-radius:999px;border:1px solid #E1DCD2;background:transparent;color:#4A505A;font:500 14px Vazirmatn,sans-serif;cursor:pointer;display:flex;align-items:center;gap:8px}
+.chips button span{font-size:12px;color:#7C828C}
+.chips button.on{background:#15181D;border-color:#15181D;color:#FFFEFB}
+.chips button.on span{color:#B9BEC6}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:30px 24px}
+.folder{position:relative;display:flex;flex-direction:column;gap:16px;padding:22px 22px 18px;margin-top:14px;border-radius:4px 18px 18px 18px;background:#FFFEFB;border:1px solid #E6E2D9;text-decoration:none;color:#15181D;box-shadow:0 1px 0 #fff inset,0 2px 4px rgba(21,24,29,.04),0 18px 36px -22px rgba(21,24,29,.28);transition:transform .18s ease,box-shadow .18s ease}
+.folder:hover{transform:translateY(-3px);box-shadow:0 1px 0 #fff inset,0 4px 8px rgba(21,24,29,.05),0 28px 48px -24px rgba(21,24,29,.34)}
+.folder::before,.folder::after{content:"";position:absolute;inset:0;border-radius:4px 18px 18px 18px;background:#FBF9F4;border:1px solid #E6E2D9;z-index:-1}
+.folder::before{transform:translate(-5px,5px) rotate(-.6deg)}
+.folder::after{transform:translate(-10px,10px) rotate(-1.2deg);background:#F7F4EE}
+.tab{position:absolute;top:-15px;right:-1px;height:16px;padding:0 14px;border-radius:9px 9px 0 0;font-size:11px;font-weight:700;display:flex;align-items:center;border:1px solid #E6E2D9;border-bottom:0}
+.cov-gold{background:#F6EBD3;color:#7A5617}
+.cov-ins{background:#E3ECF8;color:#1E4A85}
+.cov-own{background:#ECEBE8;color:#4A505A}
+.staple{position:absolute;top:12px;left:16px}
+.plate{display:inline-flex;align-items:stretch;direction:ltr;height:46px;border-radius:8px;background:#FDFDFA;border:1.5px solid #1C1F24;overflow:hidden;font-family:Vazirmatn,sans-serif;color:#111;align-self:center;box-shadow:0 2px 0 rgba(21,24,29,.06)}
+.plate .pf{width:22px;background:#1F4FBF;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:0 5px}
+.plate .pf i{display:block;height:3px;border-radius:1px}
+.plate .pf i:nth-child(1){background:#239F40}.plate .pf i:nth-child(2){background:#fff}.plate .pf i:nth-child(3){background:#DA0000}
+.plate .pn{padding:0 8px;font-size:25px;font-weight:700;display:flex;align-items:center}
+.plate .pl{font-size:23px;font-weight:700;display:flex;align-items:center;padding:0 2px}
+.plate .pr{border-left:1.5px solid #1C1F24;padding:0 9px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:19px;font-weight:700;line-height:1}
+.plate .pr small{font-size:8px;font-weight:600;margin-bottom:2px}
+.ids{text-align:center;font-size:12px;color:#7C828C;letter-spacing:.2px;margin-top:-6px}
+.prog{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+.prog i{height:4px;border-radius:2px;background:#E8E4DB}
+.prog i.d{background:#0E5F66}
+.prog i.c{background:#0E5F66;opacity:.45}
+.prog i.w{background:#D88A1C}
+.next{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:12px;background:#F4F2ED;font-size:13px}
+.next.act{background:#E2F0EE;color:#0A464C}
+.next.alert{background:#FBEFD9;color:#7A4A0B}
+.days{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:#F0EEE8;color:#4A505A}
+.days.late{background:#FBEFD9;color:#8A520E}
+.mine{width:7px;height:7px;border-radius:50%;background:#0E5F66;display:inline-block}
+.btn{height:44px;padding:0 18px;border-radius:13px;border:0;background:#15181D;color:#FFFEFB;font:600 14px Vazirmatn,sans-serif;display:flex;align-items:center;gap:8px;cursor:pointer;text-decoration:none}
+.btn:hover{color:#FFFEFB;background:#2A2F37}
+.ico{width:44px;height:44px;border-radius:13px;border:1px solid #E4E0D7;background:#FFFEFB;display:grid;place-items:center;position:relative;color:#3A4049}
+.ico b{position:absolute;top:-4px;left:-4px;min-width:18px;height:18px;border-radius:9px;background:#B3261E;color:#fff;font-size:10px;display:grid;place-items:center;padding:0 4px}
+</style>
+</helmet>
+<div class="dk" style="min-height: 100vh; font-family: Vazirmatn, sans-serif; color: #15181D; background: #F3F1EC">
+  <div style="max-width: 1360px; margin: 0 auto; padding: 24px 32px 56px; display: flex; flex-direction: column; gap: 30px">
+
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px">
+      <div style="display: flex; align-items: center; gap: 11px">
+        <svg width="32" height="32" viewBox="0 0 34 34" aria-hidden="true"><rect x="1" y="1" width="32" height="32" rx="10" fill="#15181D"></rect><path d="M9 23V11l8 7 8-7v12" fill="none" stroke="#FFFEFB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span style="font-size: 18px; font-weight: 700">منیج</span>
+      </div>
+      <div style="flex: 1"></div>
+      <label class="srch">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input aria-label="جست‌وجو" placeholder="پلاک، نام مشتری یا شماره پرونده">
+        <kbd>Ctrl K</kbd>
+      </label>
+      <button class="ico" type="button" aria-label="تذکرها، ۲ مورد جدید"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"></path><path d="M10 20a2 2 0 0 0 4 0"></path></svg><b>۲</b></button>
+      <a class="btn" href="#"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>پذیرش جدید</a>
+    </header>
+
+    <section style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <h1 style="margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -.3px">صبح بخیر، مهدی</h1>
+        <p style="margin: 0; font-size: 15px; color: #5F6672">۸ خودروی تصادفی در تعمیرگاه است. <b style="color: #0E5F66">۴ خودرو</b> منتظر اقدام شماست.</p>
+      </div>
+      <div class="chips" role="group" aria-label="صافی خودروها">
+        <sc-for list="{{filters}}" as="f" hint-placeholder-count="5">
+          <button type="button" class="{{f.cls}}" onClick="{{f.pick}}">{{f.label}} <span>{{f.n}}</span></button>
+        </sc-for>
+      </div>
+    </section>
+
+    <div class="grid">
+      <sc-for list="{{cars}}" as="c" hint-placeholder-count="6">
+        <a class="folder" href="CaseFolder.dc.html" aria-label="{{c.aria}}">
+          <span class="tab {{c.covCls}}">{{c.cov}}</span>
+          <svg class="staple" width="26" height="10" viewBox="0 0 26 10" aria-hidden="true"><path d="M2 8V3h22v5" fill="none" stroke="#B9BDC4" stroke-width="2" stroke-linecap="round"></path></svg>
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px">
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+              <span style="font-size: 20px; font-weight: 800">{{c.car}}</span>
+              <span style="font-size: 13px; color: #5F6672">{{c.cust}}</span>
+            </div>
+            <span class="{{c.daysCls}}">{{c.days}}</span>
+          </div>
+          <span class="plate"><span class="pf"><i></i><i></i><i></i></span><span class="pn">{{c.p1}}</span><span class="pl">{{c.pl}}</span><span class="pn">{{c.p2}}</span><span class="pr"><small>ایران</small>{{c.reg}}</span></span>
+          <div class="ids">پرونده {{c.caseNo}} · پذیرش {{c.recNo}}</div>
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <div style="display: flex; justify-content: space-between; font-size: 13px">
+              <span style="color: #5F6672">اکنون</span>
+              <span style="font-weight: 600">{{c.station}}</span>
+            </div>
+            <div class="prog">
+              <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="5"><i class="{{s.cls}}"></i></sc-for>
+            </div>
+          </div>
+          <div class="{{c.nextCls}}">
+            <span style="display: flex; align-items: center; gap: 8px"><sc-if value="{{c.mine}}" hint-placeholder-val="{{ true }}"><i class="mine"></i></sc-if>{{c.next}}</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+          </div>
+        </a>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  constructor(p){ super(p); this.state = { f: 'all' }; }
+  renderVals() {
+    const S = (n, w) => [0,1,2,3,4].map(i => ({ cls: i < n ? 'd' : (i === n ? (w ? 'w' : 'c') : '') }));
+    const all = [
+      { car:'ریرا', cust:'آقای کاظمی', p1:'۲۳', pl:'ب', p2:'۴۵۶', reg:'۱۶', caseNo:'۱۴۰۵/۴۲۱', recNo:'۸۸۲۱۴۵', cov:'بیمه بدنه', covCls:'cov-ins', station:'نقاشی · جایگاه ۲', days:'۶ روز', daysCls:'days', segs:S(3), next:'صافکاری تمام شد — تأیید و ارجاع به نقاشی', nextCls:'next act', mine:true, tags:['mine','act'] },
+      { car:'تارا', cust:'خانم احمدی', p1:'۶۸', pl:'د', p2:'۱۹۳', reg:'۱۶', caseNo:'۱۴۰۵/۴۱۸', recNo:'۸۸۲۰۹۱', cov:'کارت طلایی', covCls:'cov-gold', station:'انتظار قطعه — امداد ویژه', days:'۹ روز', daysCls:'days late', segs:S(2, true), next:'سپر جلو: امداد ویژه ۴ روز است نرسیده', nextCls:'next alert', mine:true, tags:['mine','act','parts'] },
+      { car:'سورن پلاس', cust:'آقای رضایی', p1:'۴۷', pl:'ج', p2:'۸۱۲', reg:'۱۶', caseNo:'۱۴۰۵/۴۰۹', recNo:'۸۸۱۹۷۷', cov:'شخصی', covCls:'cov-own', station:'کنترل نهایی', days:'۱۱ روز', daysCls:'days', segs:S(4), next:'آمادهٔ تحویل — هماهنگی با مشتری', nextCls:'next act', mine:true, tags:['mine','act','ready'] },
+      { car:'دنا پلاس', cust:'آقای حسینی', p1:'۳۱', pl:'س', p2:'۶۰۴', reg:'۱۶', caseNo:'۱۴۰۵/۴۲۴', recNo:'۸۸۲۲۰۳', cov:'بیمه بدنه', covCls:'cov-ins', station:'جلوبندی · جایگاه ۱', days:'۴ روز', daysCls:'days late', segs:S(3, true), next:'تکنسین: «قطعه ندارم» — ۲۶ ساعت بی‌پاسخ', nextCls:'next alert', mine:false, tags:['act','parts'] },
+      { car:'پژو ۲۰۷', cust:'خانم مرادی', p1:'۸۵', pl:'ط', p2:'۲۷۱', reg:'۱۶', caseNo:'۱۴۰۵/۴۲۶', recNo:'۸۸۲۲۴۰', cov:'کارت طلایی', covCls:'cov-gold', station:'کارشناسی', days:'۱ روز', daysCls:'days', segs:S(1), next:'برآورد کارشناس شرکت را وارد کنید', nextCls:'next act', mine:true, tags:['mine','act'] },
+      { car:'رانا پلاس', cust:'آقای قربانی', p1:'۱۹', pl:'ه', p2:'۵۳۸', reg:'۱۶', caseNo:'۱۴۰۵/۴۱۵', recNo:'۸۸۲۰۴۲', cov:'بیمه بدنه', covCls:'cov-ins', station:'صافکاری · جایگاه ۱', days:'۷ روز', daysCls:'days', segs:S(3), next:'طبق برنامه — پایان صافکاری فردا', nextCls:'next', mine:false, tags:[] },
+      { car:'پژو پارس', cust:'آقای صادقی', p1:'۵۲', pl:'م', p2:'۹۰۷', reg:'۱۶', caseNo:'۱۴۰۵/۴۱۱', recNo:'۸۸۱۹۹۸', cov:'شخصی', covCls:'cov-own', station:'انتظار قطعه — خرید بازار', days:'۸ روز', daysCls:'days', segs:S(2), next:'قیمت بازار ثبت شد — منتظر رسیدن', nextCls:'next', mine:true, tags:['mine','parts'] },
+      { car:'سورن', cust:'خانم کریمی', p1:'۷۴', pl:'ل', p2:'۳۶۵', reg:'۱۶', caseNo:'۱۴۰۵/۴۰۲', recNo:'۸۸۱۸۵۶', cov:'کارت طلایی', covCls:'cov-gold', station:'کنترل نهایی', days:'۱۳ روز', daysCls:'days', segs:S(4), next:'آمادهٔ تحویل — مشتری خبر دارد', nextCls:'next', mine:false, tags:['ready'] }
+    ];
+    const defs = [['all','همه'],['mine','پرونده‌های من'],['act','نیازمند اقدام'],['parts','منتظر قطعه'],['ready','آمادهٔ تحویل']];
+    const f = this.state.f;
+    const cars = (f === 'all' ? all : all.filter(c => c.tags.includes(f))).map(c => ({ ...c, aria: c.car + '، ' + c.cust + '، پرونده ' + c.caseNo }));
+    const toFa = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+    const filters = defs.map(([k, label]) => ({ label, n: toFa(k === 'all' ? all.length : all.filter(c => c.tags.includes(k)).length), cls: f === k ? 'on' : '', pick: () => this.setState({ f: k }) }));
+    return { cars, filters };
+  }
+}
+</script>
+</body>
+</html>

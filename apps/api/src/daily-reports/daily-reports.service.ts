@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs
 import { and, asc, count, desc, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import {
+  normalizePersian,
   DAILY_ROW_OUTCOME_LABELS,
   parseDecimal,
   parseJalali,
@@ -34,9 +35,10 @@ import { readWorkbook, writeSheet, XlsxError } from '../parts/xlsx';
 import { compareReportTimes, nextTehranDay, tehranDate } from './daily-time';
 import { DailyTasksService } from './daily-tasks.service';
 import { EmdadService, SETTLED_CATEGORIES } from './emdad.service';
+import { applyEmdadToParts } from './emdad-parts';
 import { PARSER_VERSION, emdadStatusCategory, parseEmdadSheet, parseStockSheet, type EmdadOfficial, type ParsedRow, type StockRowData } from './report-rows';
 import { safeCell } from './safe-cell';
-import { detectFormat, FORMAT_ERRORS, readSpreadsheetML, SpreadsheetError } from './spreadsheet-formats';
+import { detectFormat, FORMAT_ERRORS, readHtmlTable, readSpreadsheetML, SpreadsheetError } from './spreadsheet-formats';
 import { StockService } from './stock.service';
 
 type ImportRow = typeof dailyReportImports.$inferSelect;
@@ -108,7 +110,7 @@ export class DailyReportsService implements OnApplicationBootstrap {
     if (!Buffer.isBuffer(body) || !body.length) throw badRequest('DAILY_FILE_EMPTY', 'فایل خالی است یا به شکل فایل (application/octet-stream) ارسال نشده است');
     const format = detectFormat(body);
     if (format === 'xls_binary' || format === 'unknown') throw badRequest('DAILY_FILE_FORMAT', FORMAT_ERRORS[format]);
-    if (kind === 'stock' && format !== 'xlsx') throw badRequest('DAILY_FILE_KIND', 'برای موجودی انبار، فایل XLSX گزارش موجودی را انتخاب کنید (این فایل خروجی امداد ویژه به نظر می‌رسد)');
+    if (kind === 'stock' && format !== 'xlsx' && format !== 'html_table') throw badRequest('DAILY_FILE_KIND', 'برای موجودی انبار، گزارش موجودی کسب‌وکار (جدول با پسوند xls) یا فایل XLSX را انتخاب کنید (این فایل خروجی امداد ویژه به نظر می‌رسد)');
     if (kind === 'emdad' && format !== 'spreadsheetml') throw badRequest('DAILY_FILE_KIND', 'برای امداد ویژه، خروجی «گزارش امداد ویژه» (XML با پسوند xls) را انتخاب کنید');
     const tenantId = actor.user.tenantId;
     const hash = sha256(body);
@@ -187,10 +189,18 @@ export class DailyReportsService implements OnApplicationBootstrap {
       const diagnostics: Record<string, unknown> = { ...(job.diagnostics as object) };
       let grid: string[][];
       let sheetName: string;
-      if (job.kind === 'stock') {
+      // Columns are found by normalized name (Arabic ي/ك, spaces), never by position (spec section 11).
+      const isCodeHeader = (c: string) => normalizePersian(c).replace(/\s+/g, '') === 'کدکالا';
+      if (job.kind === 'stock' && job.format === 'html_table') {
+        const t = readHtmlTable(file.data, { headerProbe: isCodeHeader });
+        Object.assign(diagnostics, t.diagnostics, { sheetNames: t.sheetNames });
+        if (!t.rows.slice(0, 20).some((r) => r.some(isCodeHeader))) throw new SpreadsheetError('در جدول فایل ستون «کد کالا» پیدا نشد');
+        grid = t.rows;
+        sheetName = t.sheetName;
+      } else if (job.kind === 'stock') {
         const sheets = readWorkbook(file.data);
         diagnostics.sheetNames = sheets.map((s) => s.name);
-        const sheet = sheets.find((s) => s.rows.slice(0, 20).some((r) => r.some((c) => c.replace(/\s+/g, '') === 'کدکالا'))) ?? null;
+        const sheet = sheets.find((s) => s.rows.slice(0, 20).some((r) => r.some(isCodeHeader))) ?? null;
         if (!sheet) throw new SpreadsheetError('در هیچ برگه‌ای ستون «کد کالا» پیدا نشد');
         grid = sheet.rows;
         sheetName = sheet.name;
@@ -633,7 +643,9 @@ export class DailyReportsService implements OnApplicationBootstrap {
         .set({ outcome: 'older', messages: sql`${dailyReportRows.messages} || '["گزارش ثبت‌شده برای این ردیف جدیدتر است؛ مقدار قدیمی جایگزین نشد"]'::jsonb` })
         .where(and(eq(dailyReportRows.importId, job.id), inArray(dailyReportRows.rowNo, b)));
     }
-    return { counts };
+    // Spec section 7: the report moves the linked part lines automatically.
+    const parts = await applyEmdadToParts(tx, this.audit, actor, job.id, reportAt);
+    return { counts: { ...counts, partsArrived: parts.arrived, partsDealerSupply: parts.dealerSupply, linkedByRequestNo: parts.linkedByRequestNo } };
   }
 
   // -------------------------------------------------------------- profiles

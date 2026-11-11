@@ -26,11 +26,11 @@ const credentialsFile = join(dataDir, 'credentials.local.txt');
 
 const DEMO_USERS = [
   ['expert', 'کارشناس تصادفات'],
-  ['supervisor', 'سرپرست تصادفات'],
+  ['supervisor', 'کارشناس تصادفات دوم'],
+  ['qc', 'کارشناس تصادفات سوم'],
+  ['parts', 'مسئول قطعات'],
+  ['technician', 'تکنسین جایگاه'],
   ['manager', 'مدیر خدمات'],
-  ['parts', 'قطعات'],
-  ['cashier', 'مالی و صندوق'],
-  ['qc', 'کنترل کیفیت'],
   ['admin', 'مدیر سیستم'],
 ];
 

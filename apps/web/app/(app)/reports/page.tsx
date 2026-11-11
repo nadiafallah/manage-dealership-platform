@@ -26,6 +26,7 @@ import { DiscrepancyQueue } from '@/components/DiscrepancyQueue';
 import { ReportChart } from '@/components/ReportChart';
 import { ReminderComposer, type ReminderDefaults } from '@/components/ReminderComposer';
 import { useAuth } from '@/lib/auth';
+import { PlateText } from '@/components/Plate';
 
 type Views = { views: ReportView[]; defaultView: ReportView | null; defaultResponsible: 'me' | null };
 const PRIORITY_TONE: Record<string, string> = { overdue: 'chip-red', today: 'chip-amber', soon: 'chip-amber', later: 'chip-blue', none: '' };
@@ -50,7 +51,7 @@ function ReportsPage() {
       plate: i.plate,
       source: 'manager_report',
       body: `پیگیری: ${i.nextAction}`.slice(0, 300),
-      ...(partsWork ? { role: 'parts_clerk' as const } : i.responsible ? { userIds: [i.responsible.id] } : { role: 'accident_coordinator' as const }),
+      ...(partsWork ? { role: 'parts_clerk' as const } : i.responsible ? { userIds: [i.responsible.id] } : { role: 'accident_expert' as const }),
     });
   };
 
@@ -282,7 +283,7 @@ function ReportsPage() {
             <div className="kpi-reminders no-print" role="group" aria-label="تذکر دربارهٔ یافته‌ها">
               <span className="xs muted">تذکر دربارهٔ یافته‌ها:</span>
               {data.kpis.filter((k) => k.value > 0).map((k) => (
-                <button key={k.key} type="button" className="btn btn-sm" onClick={() => setRemind({ role: /part|قطعه/.test(k.key + k.label) ? 'parts_clerk' : 'accident_coordinator', source: 'manager_report', body: `${k.label}: ${faNum(k.value)} ${k.unit}؛ لطفاً امروز پیگیری کن.`.slice(0, 300) })}>
+                <button key={k.key} type="button" className="btn btn-sm" onClick={() => setRemind({ role: /part|قطعه/.test(k.key + k.label) ? 'parts_clerk' : 'accident_expert', source: 'manager_report', body: `${k.label}: ${faNum(k.value)} ${k.unit}؛ لطفاً امروز پیگیری کن.`.slice(0, 300) })}>
                   تذکر · {k.label}
                 </button>
               ))}
@@ -349,7 +350,7 @@ function ReportsPage() {
                               <div className="small">پذیرش ایران‌خودرو: <bdi>{i.admissionNo?toPersianDigits(i.admissionNo):'ثبت نشده'}</bdi></div>
                               <div className="xs muted">
                                 {i.vehicleLabel}
-                                {i.plate ? ` — ${toPersianDigits(i.plate)}` : ''}
+                                {i.plate ? <> — <PlateText value={i.plate} /></> : ''}
                               </div>
                             </td>
                             <td data-label="شرح" className="wide">

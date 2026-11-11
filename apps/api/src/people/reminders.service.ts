@@ -14,6 +14,7 @@ import {
   type ReminderSource,
   type ReminderStatus,
   type ReminderUrgency,
+  normalizeRoles,
   type Role,
   type SentReminder,
   type TechnicianProblem,
@@ -28,7 +29,7 @@ import { cases, departments, notifications, reminderRecipients, reminders, tasks
 import { calendarAt } from '../workshop/work-calendar';
 
 /** Roles that receive a technician's "I have a problem" when the case has no responsible. */
-const COORDINATOR_ROLES: Role[] = ['accident_coordinator', 'accident_expert', 'accident_supervisor'];
+const COORDINATOR_ROLES: Role[] = ['accident_expert'];
 const sender = alias(users, 'reminder_sender');
 const iso = (d: Date | null) => d?.toISOString() ?? null;
 
@@ -38,6 +39,7 @@ interface Draft {
   urgency: ReminderUrgency;
   source: ReminderSource;
   caseId: string | null;
+  partRequestId?: string | null;
   plate: string | null;
   targetRole: Role | null;
 }
@@ -104,6 +106,13 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       }
       plate ??= kase.plate;
     }
+    if (input.partId) {
+      const [part] = await this.db
+        .select({ id: partRequests.id })
+        .from(partRequests)
+        .where(and(eq(partRequests.id, input.partId), eq(partRequests.tenantId, tenantId), eq(partRequests.caseId, input.caseId!)));
+      if (!part) throw badRequest('INVALID_PART', 'این قطعه در فهرست همین خودرو نیست');
+    }
     const staff = await this.db
       .select({ id: users.id, roles: users.roles })
       .from(users)
@@ -113,9 +122,8 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       if (!staff.some((u) => u.id === id)) throw badRequest('INVALID_RECIPIENT', 'گیرنده در این نمایندگی پیدا نشد یا فعال نیست');
       recipients.add(id);
     }
-    // "مسئول تصادفات" also reaches the legacy expert and supervisor roles (the same unified desk).
-    const roles: string[] = input.role === 'accident_coordinator' ? COORDINATOR_ROLES : input.role ? [input.role] : [];
-    for (const u of staff) if (u.roles.some((r) => roles.includes(r))) recipients.add(u.id);
+    const roles: string[] = input.role ? [input.role] : [];
+    for (const u of staff) if (normalizeRoles(u.roles).some((r) => roles.includes(r))) recipients.add(u.id);
     recipients.delete(actor.user.id);
     return this.create(actor, {
       recipients: [...recipients],
@@ -123,6 +131,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       urgency: input.urgency,
       source: input.source,
       caseId: input.caseId ?? null,
+      partRequestId: input.partId ?? null,
       plate,
       targetRole: input.role ?? null,
     });
@@ -158,15 +167,14 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       .from(workshopStations).where(and(eq(workshopStations.id, selected.stationId), eq(workshopStations.tenantId, tenantId))) : [];
     const recipients = new Set([selected.assignedUserId, station?.responsibleUserId, part.c.responsibleUserId]
       .filter((id): id is string => !!id));
-    // Include accident supervisors and other parts clerks for internal visibility.
-    for (const u of staff) if (u.roles.some(role => ['accident_supervisor','parts_clerk'].includes(role))) recipients.add(u.id);
+    // Spec section 7: the accident expert of the case and the station hear about it; nobody else is broadcast to.
     const allowed = new Set(staff.map(u => u.id));
     recipients.delete(actor.user.id);
     const destination = selected.stationSnapshot?.name || selected.stationSnapshot?.code || selected.title || 'واحد تعمیر';
     return this.create(actor, {
       recipients: [...recipients].filter(id => allowed.has(id)),
       body: `قطعه «${part.p.description}» برای خودرو ${part.c.caseNumber} آماده تحویل است؛ جایگاه ${destination}. لطفاً از انبار دریافت و ثبت کنید.`,
-      urgency: 'normal', source: 'manual', caseId: part.c.id, plate: part.plate, targetRole: null,
+      urgency: 'normal', source: 'manual', caseId: part.c.id, partRequestId: part.p.id, plate: part.plate, targetRole: null,
     });
   }
 
@@ -187,8 +195,12 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       .from(users)
       .where(and(eq(users.tenantId, tenantId), eq(users.isActive, true)));
     let recipients = row.responsible && staff.some((u) => u.id === row.responsible) ? [row.responsible] : [];
-    // No responsible on the case: every active accident coordinator of the dealership.
-    if (!recipients.length) recipients = staff.filter((u) => u.roles.some((r) => COORDINATOR_ROLES.includes(r as Role))).map((u) => u.id);
+    // No responsible on the case: every active accident expert of the dealership.
+    if (!recipients.length) recipients = staff.filter((u) => normalizeRoles(u.roles).some((r) => COORDINATOR_ROLES.includes(r))).map((u) => u.id);
+    // Spec section 9: «قطعه ندارم» (and a late part) also reaches the parts clerks.
+    if (problem === 'no_part' || problem === 'part_late') {
+      recipients = [...new Set([...recipients, ...staff.filter((u) => normalizeRoles(u.roles).includes('parts_clerk')).map((u) => u.id)])];
+    }
     return this.create(actor, {
       recipients: recipients.filter((id) => id !== actor.user.id),
       body: `${TECHNICIAN_PROBLEM_LABELS[problem]} — ${row.t.title || row.department}`,
@@ -213,6 +225,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
         tenantId,
         senderUserId: actor.user.id,
         caseId: draft.caseId,
+        partRequestId: draft.partRequestId ?? null,
         plate: draft.plate,
         body: draft.body,
         urgency: draft.urgency,
@@ -230,7 +243,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
         caseId: draft.caseId,
         action: 'reminder.sent',
         occurredAt: now,
-        after: { body: draft.body, urgency: draft.urgency, source: draft.source, targetRole: draft.targetRole, recipients: draft.recipients.length, plate: draft.plate },
+        after: { body: draft.body, urgency: draft.urgency, source: draft.source, targetRole: draft.targetRole, recipients: draft.recipients.length, plate: draft.plate, partRequestId: draft.partRequestId ?? null },
       });
     });
     return { id, recipients: draft.recipients.length };
@@ -246,9 +259,10 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
   async mine(actor: Actor, now = new Date()): Promise<MyReminders> {
     const received = await this.received(actor, undefined, 100, now);
     const sent = await this.db
-      .select({ r: reminders, caseNumber: cases.caseNumber })
+      .select({ r: reminders, caseNumber: cases.caseNumber, partDescription: partRequests.description })
       .from(reminders)
       .leftJoin(cases, and(eq(cases.id, reminders.caseId), eq(cases.tenantId, reminders.tenantId)))
+      .leftJoin(partRequests, eq(partRequests.id, reminders.partRequestId))
       .where(and(eq(reminders.tenantId, actor.user.tenantId), eq(reminders.senderUserId, actor.user.id)))
       .orderBy(desc(reminders.createdAt), desc(reminders.id))
       .limit(100);
@@ -262,12 +276,13 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       : [];
     return {
       received,
-      sent: sent.map(({ r, caseNumber }): SentReminder => ({
+      sent: sent.map(({ r, caseNumber, partDescription }): SentReminder => ({
         id: r.id,
         body: r.body,
         urgency: r.urgency as ReminderUrgency,
         source: r.source as ReminderSource,
         case: r.caseId && caseNumber ? { id: r.caseId, caseNumber } : null,
+        part: r.partRequestId && partDescription ? { id: r.partRequestId, description: partDescription } : null,
         plate: r.plate,
         targetRole: (r.targetRole as Role | null) ?? null,
         createdAt: r.createdAt.toISOString(),
@@ -280,22 +295,24 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
 
   private async received(actor: Actor, condition: SQL | undefined, limit: number, now: Date): Promise<ReceivedReminder[]> {
     const rows = await this.db
-      .select({ c: reminderRecipients, r: reminders, senderName: sender.displayName, senderRoles: sender.roles, senderOwner: sender.isOwner, caseNumber: cases.caseNumber })
+      .select({ c: reminderRecipients, r: reminders, senderName: sender.displayName, senderRoles: sender.roles, senderOwner: sender.isOwner, caseNumber: cases.caseNumber, partDescription: partRequests.description })
       .from(reminderRecipients)
       .innerJoin(reminders, and(eq(reminders.id, reminderRecipients.reminderId), eq(reminders.tenantId, reminderRecipients.tenantId)))
       .innerJoin(sender, eq(sender.id, reminders.senderUserId))
       .leftJoin(cases, and(eq(cases.id, reminders.caseId), eq(cases.tenantId, reminders.tenantId)))
+      .leftJoin(partRequests, eq(partRequests.id, reminders.partRequestId))
       .where(and(eq(reminderRecipients.tenantId, actor.user.tenantId), eq(reminderRecipients.userId, actor.user.id), condition))
       .orderBy(desc(reminders.createdAt), desc(reminderRecipients.id))
       .limit(limit);
-    return rows.map(({ c, r, senderName, senderRoles, senderOwner, caseNumber }) => ({
+    return rows.map(({ c, r, senderName, senderRoles, senderOwner, caseNumber, partDescription }) => ({
       id: c.id,
       reminderId: r.id,
-      sender: { id: r.senderUserId, displayName: senderName, roleLabel: senderOwner ? 'مالک' : ((senderRoles as Role[]).map((role) => ROLE_LABELS[role]).filter(Boolean)[0] ?? '') },
+      sender: { id: r.senderUserId, displayName: senderName, roleLabel: senderOwner ? 'مالک' : (normalizeRoles(senderRoles as string[]).map((role) => ROLE_LABELS[role])[0] ?? '') },
       body: r.body,
       urgency: r.urgency as ReminderUrgency,
       source: r.source as ReminderSource,
       case: r.caseId && caseNumber ? { id: r.caseId, caseNumber } : null,
+      part: r.partRequestId && partDescription ? { id: r.partRequestId, description: partDescription } : null,
       plate: r.plate,
       status: c.status as ReminderStatus,
       seenAt: iso(c.seenAt),

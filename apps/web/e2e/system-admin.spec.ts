@@ -35,7 +35,7 @@ test('owner-configured support desk exposes daily upload, all operational queues
  // The non-owner support session cannot retrieve or mutate access administration.
  expect((await page.request.get('/api/v1/access')).status()).toBe(403);
  await page.goto('/users');await expect(page.locator('#access-control')).toHaveCount(0);
- await page.goto('/accidents/expert');await expect(page.getByRole('heading',{name:'میز کار مسئول تصادفات',exact:true})).toBeVisible();
+ await page.goto('/accidents/expert');await expect(page.locator('.desk-kicker')).toHaveText('میز کار کارشناس تصادفات');
  await page.goto('/accidents/owner');await expect(page.getByRole('heading',{name:'این میز کار برای شما فعال نیست',exact:true})).toBeVisible();
 });
 

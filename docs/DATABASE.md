@@ -124,3 +124,22 @@ Verified locally on PostgreSQL 16: all migrations `0000`→`0018` on an empty da
 - `trusted_devices`: one row per (device cookie, account); the cookie `manage_device` holds a random token, only its SHA-256 is stored. On a trusted device the PIN alone signs in; revoked rows (`revoked_at`) need the device password again.
 
 Additive only. Rollback: the previous application ignores the table and column; `down/0019_staff_pin_devices.down.sql` is for disposable databases only.
+
+## 0020 — six roles (spec section 3)
+
+Five role codes plus the owner flag: `accident_expert`, `parts_clerk`, `technician`, `service_manager`, `system_admin`; the owner stays `users.is_owner`.
+
+- `users.roles`: `accident_coordinator`, `accident_supervisor` and `qc_inspector` become `accident_expert` (duplicates removed); `cashier` is removed. An account left with no role and not the owner is kept but deactivated, and its open sessions are revoked. Credentials, PIN, Authenticator, personal allow/deny overrides, cases and audit are untouched.
+- `tenants.permission_templates` is reset to `{}` (the code defaults of the specification) and `permission_version` is bumped, so open access forms reload.
+- `reminders.target_role`: retired codes become `accident_expert` (`cashier` → null).
+- New table `role_migration_log` keeps the previous and new value of every row the migration changed (`entity` = user | tenant | reminder). The application never writes it.
+
+The application also maps any remaining legacy code when it reads roles (`normalizeRoles` in `packages/shared/src/enums.ts`), so a row written by an older image still resolves. Rollback: `down/0020_six_roles.down.sql` restores roles, active flags, templates and reminder roles exactly from the log, then drops it; revoked sessions stay revoked. Verified on PostgreSQL 16: 0000→0020 on an empty database, synthetic legacy rows mapped as described, down script restored every logged value.
+
+## 0021 — price announcements (spec section 7)
+
+New table `part_price_notices`: one row per «اعلام قیمت» of the parts clerk on one line (sale unit price, note, who and when) and the accident expert's answer (`approved` or `instruction` with text; `superseded` when a newer announcement, a cancellation or a return replaces it). Never blocks work; every write is audited. Lines (`part_requests.status`) and stock reservations (`stock_reservations.status`) may now also be `returned` (مرجوعی); both columns are text, so no constraint changes. The unified flow state of a line is derived, not stored: from status, source, `consumed_at` and the latest linked Emdad request (see `packages/shared/src/part-flow.ts`). `consumed_at` and `stock_reservations.reflected_at` are now set automatically when the case is finished (handover), which replaces the manual «reflect» step. Additive; the demo purge deletes the new rows. Verified on PostgreSQL 16 (0000→0021 and the down script). Rollback: `down/0021_part_price_notices.down.sql`, disposable databases only.
+
+## 0022 — reminder about one part line (spec section 9)
+
+New nullable column `reminders.part_request_id` (foreign key to `part_requests.id`): a «تذکر» may point to one part line of its car, in addition to the case. The API accepts a part only together with the case it belongs to (`INVALID_PART` otherwise). Existing reminders are unchanged. No other table is touched; control-room numbers and the alert sweep (`behind_schedule`, `emdad_late`, `daily_report_missing` notifications, unique per user and dedupe key) are derived from existing data and store nothing new. Verified on PostgreSQL 16 (0000→0022, down, up again). Rollback: `down/0022_reminder_part.down.sql` (drops the column and its constraint; the case link of every reminder stays).

@@ -1,3 +1,5 @@
+> **Superseded (package 6, 2026-11-10):** the Signature theme and the `?ui=classic` switch were removed. The current design system is [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md); this file is kept as history.
+
 # HEDAX Signature — QA record
 
 Environment: Linux container, Node 22.23, pnpm 10.34.6, Playwright 1.64 with Chromium build 1243 headless. Synthetic demo data only. Date 2026-11-07.

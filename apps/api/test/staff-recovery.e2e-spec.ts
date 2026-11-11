@@ -3,7 +3,7 @@ import {and,eq} from 'drizzle-orm';
 import {authChallenges,auditEvents,idempotencyKeys,sessions,tenants,users} from '../src/db/schema';
 import {newId} from '../src/common/ids';
 import {authenticator} from '../src/auth/totp';
-import {createHarness,type Client,type Harness} from './harness';
+import { createHarness, LEGACY_QC_PERMISSIONS, type Client, type Harness } from './harness';
 
 const KEY='synthetic-test-authenticator-key-32-characters';
 const OLD_PASSWORD='old-personal-password-12';
@@ -44,7 +44,7 @@ describe('Owner-issued staff access recovery',()=>{
     const admin=await h.login('admin');
     expect((await admin.get('/auth/me')).body.permissions).toContain('user.manage');
     expect((await admin.post(`/auth/users/${worker.id}/recovery`,{})).status).toBe(403);
-    expect((await (await h.login('qc')).post(`/auth/users/${worker.id}/recovery`,{})).status).toBe(403);
+    expect((await (await h.loginAs('narrow', [], LEGACY_QC_PERMISSIONS)).post(`/auth/users/${worker.id}/recovery`,{})).status).toBe(403);
     expect((await post(`/users/${worker.id}/recovery`,{})).status).toBe(401);
     const challenges=await h.db.db.select().from(authChallenges).where(eq(authChallenges.purpose,'recover'));
     expect(challenges).toHaveLength(0);

@@ -18,3 +18,8 @@ export * from './parts-workbench';
 export * from './manage-advisor';
 
 export * from './people';
+export * from './alerts';
+export * from './part-flow';
+export * from './repair-plan';
+export * from './desk';
+export * from './control-room';
