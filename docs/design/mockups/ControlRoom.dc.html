@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>اتاق کنترل مدیر خدمات</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#07090D}
+a{color:#7FE3D3}a:hover{color:#B5F2E8}
+.cr *{box-sizing:border-box}
+.glass{background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.018));border:1px solid rgba(255,255,255,.07);border-radius:22px;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 30px 60px -30px rgba(0,0,0,.7)}
+.lbl{font-size:12px;color:#8A93A3;font-weight:500}
+.kpi{padding:22px 24px;display:flex;flex-direction:column;gap:10px}
+.kpi .n{font-size:40px;font-weight:800;line-height:1;letter-spacing:-.5px}
+.kpi .s{font-size:12px;color:#8A93A3}
+.stage{display:flex;flex-direction:column;gap:10px;min-width:0}
+.bar{height:10px;border-radius:5px;background:#1A2029;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:5px}
+.iso-wrap{position:relative;height:380px;perspective:1400px;overflow:hidden}
+.iso{position:absolute;left:50%;top:50%;width:560px;height:360px;margin:-180px 0 0 -280px;transform:rotateX(56deg) rotateZ(-40deg);transform-style:preserve-3d;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.bay{position:relative;border-radius:14px;background:rgba(127,227,211,.035);border:1px solid rgba(127,227,211,.16);padding:12px;transform-style:preserve-3d;display:flex;flex-wrap:wrap;align-content:flex-end;gap:8px}
+.bay.warn{background:rgba(242,180,92,.06);border-color:rgba(242,180,92,.35)}
+.bay b{position:absolute;top:10px;right:12px;font-size:13px;color:#C7CED9;font-weight:600}
+.car{width:38px;height:22px;border-radius:6px;transform:translateZ(10px);box-shadow:0 0 0 1px rgba(255,255,255,.15) inset}
+.car.ok{background:#5ED0BF;box-shadow:0 8px 0 -2px #2E7F74,0 0 18px rgba(94,208,191,.45)}
+.car.late{background:#F2B45C;box-shadow:0 8px 0 -2px #9A6A26,0 0 18px rgba(242,180,92,.45)}
+.car.stop{background:#F07A6E;box-shadow:0 8px 0 -2px #93392F,0 0 18px rgba(240,122,110,.5)}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.row:last-child{border-bottom:0}
+.chip{font-size:12px;padding:4px 10px;border-radius:999px;font-weight:600}
+.srch{display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);color:#8A93A3;font-size:13px;min-width:240px}
+.srch kbd{margin-inline-start:auto;font:600 11px Vazirmatn,sans-serif;color:#6B7482;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:1px 6px}
+.seg{display:flex;padding:4px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)}
+.seg span{padding:7px 14px;border-radius:9px;font-size:13px;color:#8A93A3}
+.seg span.on{background:#F2F4F7;color:#0B0E13;font-weight:600}
+</style>
+</helmet>
+<div class="cr" style="min-height: 100vh; font-family: Vazirmatn, sans-serif; color: #F2F4F7; background: radial-gradient(1000px 600px at 75% -10%, #0F2129 0%, #07090D 55%)">
+  <div style="max-width: 1360px; margin: 0 auto; padding: 28px 32px 48px; display: flex; flex-direction: column; gap: 22px">
+
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 18px">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <svg width="30" height="30" viewBox="0 0 34 34" aria-hidden="true"><rect x="1" y="1" width="32" height="32" rx="10" fill="none" stroke="#7FE3D3" stroke-width="1.5"></rect><path d="M9 23V11l8 7 8-7v12" fill="none" stroke="#F2F4F7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <div style="display: flex; flex-direction: column; line-height: 1.2">
+          <span style="font-size: 18px; font-weight: 700">اتاق کنترل</span>
+          <span style="font-size: 12px; color: #8A93A3">دوشنبه ۱۸ آبان ۱۴۰۵ · به‌روز ۱۰:۲۴</span>
+        </div>
+      </div>
+      <div style="flex: 1"></div>
+      <div class="seg"><span class="on">امروز</span><span>این هفته</span><span>این ماه</span></div>
+      <div class="srch">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <span>پلاک، نام یا شماره پرونده</span><kbd>Ctrl K</kbd>
+      </div>
+      <div style="width: 40px; height: 40px; border-radius: 12px; background: #1A2029; display: grid; place-items: center; font-weight: 700; font-size: 14px">ع</div>
+    </header>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px">
+      <div class="glass kpi"><span class="lbl">خودرو در تعمیرگاه</span><span class="n">۲۳</span><span class="s">۴ پذیرش امروز · ۲ تحویل امروز</span></div>
+      <div class="glass kpi"><span class="lbl">میانگین ماندگاری</span><span class="n">۶٫۴<span style="font-size: 18px; font-weight: 500; color: #8A93A3"> روز</span></span><span class="s">هفتهٔ پیش ۷٫۱ روز</span></div>
+      <div class="glass kpi"><span class="lbl">عقب‌تر از برنامه</span><span class="n" style="color: #F2B45C">۵</span><span class="s">۲ مورد بیش از ۳ روز</span></div>
+      <div class="glass kpi"><span class="lbl">هشدار بی‌پاسخ</span><span class="n" style="color: #F07A6E">۳</span><span class="s">قدیمی‌ترین: ۲۶ ساعت پیش</span></div>
+    </div>
+
+    <section class="glass" style="padding: 24px 26px; display: flex; flex-direction: column; gap: 18px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px">
+        <h2 style="margin: 0; font-size: 17px; font-weight: 700">مسیر خودروها، از پذیرش تا تحویل</h2>
+        <span class="lbl">تعداد خودرو · میانگین روز در هر مرحله</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 22px">
+        <div class="stage"><span class="lbl">پذیرش</span><span style="font-size: 26px; font-weight: 700">۲ <span style="font-size: 13px; color: #8A93A3; font-weight: 500">· ۰٫۵ روز</span></span><div class="bar"><i style="width: 12%; background: #5ED0BF"></i></div></div>
+        <div class="stage"><span class="lbl">کارشناسی و مجوز</span><span style="font-size: 26px; font-weight: 700">۳ <span style="font-size: 13px; color: #8A93A3; font-weight: 500">· ۱٫۲ روز</span></span><div class="bar"><i style="width: 24%; background: #5ED0BF"></i></div></div>
+        <div class="stage" style="position: relative"><span class="lbl" style="color: #F2B45C">منتظر قطعه — گلوگاه</span><span style="font-size: 26px; font-weight: 700; color: #F2B45C">۸ <span style="font-size: 13px; color: #C9A26A; font-weight: 500">· ۳٫۹ روز</span></span><div class="bar"><i style="width: 78%; background: #F2B45C; box-shadow: 0 0 14px rgba(242,180,92,.6)"></i></div></div>
+        <div class="stage"><span class="lbl">در حال تعمیر</span><span style="font-size: 26px; font-weight: 700">۷ <span style="font-size: 13px; color: #8A93A3; font-weight: 500">· ۲٫۱ روز</span></span><div class="bar"><i style="width: 42%; background: #5ED0BF"></i></div></div>
+        <div class="stage"><span class="lbl">آمادهٔ تحویل</span><span style="font-size: 26px; font-weight: 700">۳ <span style="font-size: 13px; color: #8A93A3; font-weight: 500">· ۰٫۸ روز</span></span><div class="bar"><i style="width: 16%; background: #5ED0BF"></i></div></div>
+      </div>
+    </section>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 16px">
+      <section class="glass" style="flex: 999 1 640px; min-width: 0; padding: 24px 26px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 10px">
+          <h2 style="margin: 0; font-size: 17px; font-weight: 700">نقشهٔ زندهٔ کارگاه</h2>
+          <div style="display: flex; gap: 16px; font-size: 12px; color: #A3ACBB">
+            <span><i class="dot" style="background: #5ED0BF"></i> طبق برنامه</span>
+            <span><i class="dot" style="background: #F2B45C"></i> عقب‌تر</span>
+            <span><i class="dot" style="background: #F07A6E"></i> متوقف</span>
+          </div>
+        </div>
+        <div class="iso-wrap" role="img" aria-label="نقشهٔ کارگاه: صافکاری ۱ و ۲، نقاشی، جلوبندی، مکانیک و محوطهٔ انتظار قطعه با ۸ خودرو">
+          <div class="iso">
+            <div class="bay"><b>صافکاری ۱</b><span class="car ok"></span><span class="car late"></span></div>
+            <div class="bay"><b>صافکاری ۲</b><span class="car ok"></span></div>
+            <div class="bay"><b>نقاشی</b><span class="car ok"></span><span class="car ok"></span><span class="car late"></span></div>
+            <div class="bay"><b>جلوبندی</b><span class="car stop"></span></div>
+            <div class="bay"><b>مکانیک</b><span class="car ok"></span></div>
+            <div class="bay warn"><b style="color: #F2B45C">انتظار قطعه</b><span class="car late"></span><span class="car late"></span><span class="car stop"></span><span class="car late"></span><span class="car ok"></span><span class="car late"></span><span class="car ok"></span><span class="car late"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="glass" style="flex: 1 1 360px; min-width: 0; padding: 24px 26px; display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; align-items: center; gap: 10px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7FE3D3" stroke-width="1.8" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M6 18l2-2M16 8l2-2"></path><circle cx="12" cy="12" r="3.5"></circle></svg>
+          <h2 style="margin: 0; font-size: 17px; font-weight: 700">تحلیل امروز</h2>
+        </div>
+        <p style="margin: 0; font-size: 15px; line-height: 2; color: #D5DAE2">بیشترین توقف در <b style="color: #F2B45C">انتظار قطعه</b> است: ۵ خودرو از ۸ مورد، منتظر قطعه‌های امداد ویژه‌اند که بیش از ۴ روز از ثبتشان گذشته.</p>
+        <p style="margin: 0; font-size: 15px; line-height: 2; color: #D5DAE2">جایگاه <b>جلوبندی</b> از دیروز یک خودروی متوقف دارد؛ تکنسین «قطعه ندارم» زده و هنوز کسی پاسخ نداده.</p>
+        <p style="margin: 0; font-size: 15px; line-height: 2; color: #D5DAE2">نقاشی امروز ظرفیت آزاد دارد؛ کارشناس می‌تواند دو خودروی آمادهٔ نقاشی را جلو بیندازد.</p>
+        <a href="#" style="margin-top: auto; font-size: 13px; font-weight: 600; text-decoration: none">ارسال تذکر به مسئول قطعات ←</a>
+      </section>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 16px">
+      <section class="glass" style="flex: 1 1 520px; min-width: 0; padding: 22px 26px">
+        <h2 style="margin: 0 0 6px; font-size: 17px; font-weight: 700">عملکرد افراد</h2>
+        <div class="row"><div style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">مهدی رحیمی</span><span class="lbl">کارشناس تصادفات · ۱۱ پرونده باز</span></div><div style="display: flex; gap: 22px; font-size: 13px; color: #A3ACBB"><span>میانگین ۵٫۸ روز</span><span class="chip" style="background: rgba(94,208,191,.12); color: #7FE3D3">طبق برنامه</span></div></div>
+        <div class="row"><div style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">سعید نوری</span><span class="lbl">کارشناس تصادفات · ۹ پرونده باز</span></div><div style="display: flex; gap: 22px; font-size: 13px; color: #A3ACBB"><span>میانگین ۷٫۲ روز</span><span class="chip" style="background: rgba(242,180,92,.12); color: #F2B45C">۲ تأخیر</span></div></div>
+        <div class="row"><div style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">رضا مرادی</span><span class="lbl">تأمین قطعه · ۱۴ قلم در جریان</span></div><div style="display: flex; gap: 22px; font-size: 13px; color: #A3ACBB"><span>میانگین رسیدن ۳٫۹ روز</span><span class="chip" style="background: rgba(240,122,110,.12); color: #F07A6E">۱ هشدار بی‌پاسخ</span></div></div>
+      </section>
+      <section class="glass" style="flex: 1 1 400px; min-width: 0; padding: 22px 26px">
+        <h2 style="margin: 0 0 6px; font-size: 17px; font-weight: 700">هشدارهای بی‌پاسخ</h2>
+        <div class="row"><span style="display: flex; gap: 10px; align-items: center"><i class="dot" style="background: #F07A6E"></i>دنا پلاس — قطعه ندارم، جلوبندی</span><span class="lbl">۲۶ ساعت</span></div>
+        <div class="row"><span style="display: flex; gap: 10px; align-items: center"><i class="dot" style="background: #F2B45C"></i>ریرا — هزینهٔ قطعه از سقف گذشت</span><span class="lbl">۵ ساعت</span></div>
+        <div class="row"><span style="display: flex; gap: 10px; align-items: center"><i class="dot" style="background: #F2B45C"></i>پژو ۲۰۷ — یک روز عقب‌تر از برنامه</span><span class="lbl">۲ ساعت</span></div>
+      </section>
+    </div>
+
+    <p style="margin: 0; text-align: center; font-size: 12px; color: #5E6672">همهٔ اعداد و نام‌ها نمونه‌اند، فقط برای طراحی.</p>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

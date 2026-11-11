@@ -10,4 +10,4 @@
 .env.*
 !.env.example
 docs/screenshots
-index (4).html
+legacy/

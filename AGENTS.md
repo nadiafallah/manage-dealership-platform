@@ -2,6 +2,8 @@
 
 Read this file and [PROGRESS.md](PROGRESS.md) before changing anything. Continue from the last recorded state; do not restart work that is already done.
 
+**Single source of truth:** [docs/PRODUCT_SPEC_FA.md](docs/PRODUCT_SPEC_FA.md) (approved by the owner on 1405-08-19 / 2026-11-10). Wherever code, README, PROGRESS.md or another document differs from it, the specification is right. Approved mockups: [docs/design/mockups/](docs/design/mockups/). History before 2026-11-10: [docs/archive/PROGRESS_2026-11.md](docs/archive/PROGRESS_2026-11.md).
+
 ## Product and scope
 
 - Manage by HEDAX: dealership operations platform. Phase 1 = accident-repair cases for one Iran Khodro dealership; multi-dealership and other brands later.

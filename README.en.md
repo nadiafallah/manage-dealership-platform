@@ -65,7 +65,7 @@ Latest results: [docs/TEST_REPORT.md](docs/TEST_REPORT.md).
 
 ## Layout
 
-`apps/api` (NestJS, Drizzle, PostgreSQL) · `apps/web` (Next.js) · `packages/shared` (contracts, permissions, Jalali dates) · `docs/`. The earlier single-file prototype `index (4).html` is kept unchanged; see the [feature migration plan](docs/PROTOTYPE_MIGRATION.md).
+`apps/api` (NestJS, Drizzle, PostgreSQL) · `apps/web` (Next.js) · `packages/shared` (contracts, permissions, Jalali dates) · `docs/`. The earlier single-file prototype is kept unchanged in `legacy/index (4).html`; see the [feature migration plan](docs/PROTOTYPE_MIGRATION.md).
 
 ## Documentation
 

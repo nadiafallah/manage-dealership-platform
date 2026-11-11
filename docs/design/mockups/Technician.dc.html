@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>کار من — تکنسین</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0E5F66}a:hover{color:#0A464C}
+.tc *{box-sizing:border-box}
+.plate{display:inline-flex;align-items:stretch;direction:ltr;height:50px;border-radius:9px;background:#FDFDFA;border:1.5px solid #1C1F24;overflow:hidden;font-family:Vazirmatn,sans-serif;color:#111}
+.plate .pf{width:23px;background:#1F4FBF;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:0 5px}
+.plate .pf i{display:block;height:3px;border-radius:1px}
+.plate .pf i:nth-child(1){background:#239F40}.plate .pf i:nth-child(2){background:#fff}.plate .pf i:nth-child(3){background:#DA0000}
+.plate .pn{padding:0 8px;font-size:27px;font-weight:700;display:flex;align-items:center}
+.plate .pl{font-size:25px;font-weight:700;display:flex;align-items:center;padding:0 2px}
+.plate .pr{border-left:1.5px solid #1C1F24;padding:0 9px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:20px;font-weight:700;line-height:1}
+.plate .pr small{font-size:8px;font-weight:600;margin-bottom:2px}
+.big{width:100%;height:76px;border:0;border-radius:22px;font:800 22px Vazirmatn,sans-serif;display:flex;align-items:center;justify-content:center;gap:14px;cursor:pointer}
+.go{background:#0E7A55;color:#fff;box-shadow:0 14px 28px -14px rgba(14,122,85,.8)}
+.stop{background:#15181D;color:#fff;box-shadow:0 14px 28px -14px rgba(21,24,29,.7)}
+.warn{width:100%;height:58px;border-radius:18px;border:1.5px solid #E7C27E;background:#FFF7E8;color:#7A4A0B;font:700 17px Vazirmatn,sans-serif;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer}
+.pill{font-size:13px;font-weight:700;padding:5px 12px;border-radius:999px}
+.mini{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-radius:18px;background:#FFFEFB;border:1px solid #E6E2D9}
+</style>
+</helmet>
+<div class="tc" style="width: 390px; height: 844px; overflow: hidden; font-family: Vazirmatn, sans-serif; color: #15181D; background: #F3F1EC; display: flex; flex-direction: column; gap: 16px; padding: 22px 18px">
+
+  <header style="display: flex; align-items: center; justify-content: space-between">
+    <div style="display: flex; flex-direction: column">
+      <span style="font-size: 20px; font-weight: 800">سلام علی‌رضا</span>
+      <span style="font-size: 14px; color: #5F6672">صافکاری · جایگاه ۱</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: flex-end; padding: 10px 14px; border-radius: 16px; background: #15181D; color: #fff">
+      <span style="font-size: 11px; color: #B9BEC6">اجرت این ماه</span>
+      <span style="font-size: 18px; font-weight: 800">۳۸٬۵۰۰٬۰۰۰ <span style="font-size: 11px; font-weight: 500">ریال</span></span>
+    </div>
+  </header>
+
+  <section style="background: #FFFEFB; border: 1px solid #E6E2D9; border-radius: 26px; padding: 20px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 22px 40px -26px rgba(21,24,29,.35)">
+    <div style="display: flex; justify-content: space-between; align-items: center">
+      <span style="font-size: 26px; font-weight: 800">ریرا</span>
+      <span class="pill" style="background: #FBE5E2; color: #9A2018">فوری</span>
+    </div>
+    <span class="plate" style="align-self: center" role="img" aria-label="پلاک ۲۳ ب ۴۵۶ ایران ۱۶"><span class="pf"><i></i><i></i><i></i></span><span class="pn">۲۳</span><span class="pl">ب</span><span class="pn">۴۵۶</span><span class="pr"><small>ایران</small>۱۶</span></span>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+      <div style="padding: 12px; border-radius: 14px; background: #F4F2ED; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 12px; color: #5F6672">وقت</span><span style="font-size: 18px; font-weight: 800">۲ روز</span>
+      </div>
+      <div style="padding: 12px; border-radius: 14px; background: #E2F0EE; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 12px; color: #0A464C">اجرت شما</span><span style="font-size: 18px; font-weight: 800; color: #0A464C">۴٬۵۰۰٬۰۰۰</span>
+      </div>
+    </div>
+    <span style="font-size: 15px; color: #3A4049; line-height: 1.8">گلگیر و درِ جلو راست</span>
+
+    <sc-if value="{{idle}}" hint-placeholder-val="{{ true }}">
+      <button class="big go" type="button" onClick="{{start}}"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg>شروع کار</button>
+    </sc-if>
+    <sc-if value="{{working}}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <span style="text-align: center; font-size: 14px; color: #0E7A55; font-weight: 700">در حال کار از ساعت ۸:۱۵</span>
+        <button class="big stop" type="button" onClick="{{finish}}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>پایان کار</button>
+      </div>
+    </sc-if>
+    <sc-if value="{{done}}" hint-placeholder-val="{{ false }}">
+      <div style="padding: 16px; border-radius: 18px; background: #E5F4EC; color: #0B5C40; font-size: 16px; font-weight: 700; text-align: center; line-height: 1.8">تمام شد. منتظر تأیید کارشناس.</div>
+    </sc-if>
+    <button class="warn" type="button"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"></path><path d="M3 7l9 4 9-4M12 11v10"></path></svg>قطعه ندارم</button>
+  </section>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <span style="font-size: 14px; font-weight: 700; color: #5F6672">بعدی</span>
+    <div class="mini">
+      <div style="display: flex; flex-direction: column"><span style="font-size: 17px; font-weight: 800">رانا پلاس</span><span style="font-size: 13px; color: #5F6672">۱۹ ه ۵۳۸ · بیمه</span></div>
+      <span style="font-size: 16px; font-weight: 800">۳٬۸۰۰٬۰۰۰</span>
+    </div>
+    <div class="mini">
+      <div style="display: flex; flex-direction: column"><span style="font-size: 17px; font-weight: 800">پژو پارس</span><span style="font-size: 13px; color: #5F6672">۵۲ م ۹۰۷ · شخصی</span></div>
+      <span style="font-size: 16px; font-weight: 800">۲٬۹۰۰٬۰۰۰</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(p){ super(p); this.state = { s: 'idle' }; }
+  renderVals() {
+    const s = this.state.s;
+    return {
+      idle: s === 'idle', working: s === 'working', done: s === 'done',
+      start: () => this.setState({ s: 'working' }),
+      finish: () => this.setState({ s: 'done' })
+    };
+  }
+}
+</script>
+</body>
+</html>

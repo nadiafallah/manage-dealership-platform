@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>ورود به منیج</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#07090D}
+a{color:#7FE3D3}a:hover{color:#B5F2E8}
+.lg-root *{box-sizing:border-box}
+.lg-field{display:flex;flex-direction:column;gap:8px}
+.lg-field label{font-size:13px;color:#A3ACBB;font-weight:500}
+.lg-input{height:52px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.035);color:#F2F4F7;font:500 16px Vazirmatn,sans-serif;padding:0 16px;outline:none}
+.lg-input:focus{border-color:#7FE3D3;box-shadow:0 0 0 4px rgba(127,227,211,.12)}
+.pin{display:flex;gap:12px;direction:ltr;justify-content:flex-end}
+.pin input{width:60px;height:64px;text-align:center;border-radius:16px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#F2F4F7;font:700 26px Vazirmatn,sans-serif;outline:none}
+.pin input:focus{border-color:#7FE3D3;box-shadow:0 0 0 4px rgba(127,227,211,.12)}
+.seg{display:flex;padding:4px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07)}
+.seg button{flex:1;height:42px;border:0;border-radius:11px;background:transparent;color:#A3ACBB;font:600 14px Vazirmatn,sans-serif;cursor:pointer}
+.seg button.on{background:#F2F4F7;color:#0B0E13}
+.cta{height:56px;border:0;border-radius:16px;background:linear-gradient(180deg,#9AF0E2,#5ED0BF);color:#062A26;font:700 16px Vazirmatn,sans-serif;cursor:pointer;box-shadow:0 10px 30px -10px rgba(94,208,191,.55),inset 0 1px 0 rgba(255,255,255,.5)}
+.scene{position:relative;width:100%;height:100%;perspective:1600px;overflow:hidden}
+.floor{position:absolute;left:50%;top:54%;width:900px;height:900px;margin:-450px 0 0 -450px;transform:rotateX(62deg) rotateZ(-38deg);transform-style:preserve-3d;background-image:linear-gradient(rgba(127,227,211,.09) 1px,transparent 1px),linear-gradient(90deg,rgba(127,227,211,.09) 1px,transparent 1px);background-size:60px 60px;border-radius:50%;mask-image:radial-gradient(circle,#000 30%,transparent 68%);-webkit-mask-image:radial-gradient(circle,#000 30%,transparent 68%)}
+.stack{position:absolute;left:50%;top:50%;transform-style:preserve-3d;transform:rotateX(58deg) rotateZ(-34deg)}
+.f3d{position:absolute;width:300px;height:190px;border-radius:18px;background:linear-gradient(160deg,#1A212B,#10151C);border:1px solid rgba(255,255,255,.09);box-shadow:0 40px 60px -20px rgba(0,0,0,.8);padding:20px;display:flex;flex-direction:column;justify-content:space-between;animation:float 7s ease-in-out infinite}
+.f3d::before{content:"";position:absolute;top:-14px;right:22px;width:96px;height:16px;border-radius:8px 8px 0 0;background:#1A212B;border:1px solid rgba(255,255,255,.09);border-bottom:0}
+.f3d.hot{border-color:rgba(127,227,211,.45);box-shadow:0 0 0 1px rgba(127,227,211,.2),0 0 60px -6px rgba(127,227,211,.35),0 40px 60px -20px rgba(0,0,0,.8)}
+@keyframes float{0%,100%{translate:0 0}50%{translate:0 -10px}}
+.plate{display:inline-flex;align-items:stretch;direction:ltr;height:38px;border-radius:7px;background:#FBFBF8;border:1.5px solid #1C1F24;overflow:hidden;font-family:Vazirmatn,sans-serif;color:#111;box-shadow:0 1px 0 rgba(255,255,255,.6) inset}
+.plate .pf{width:20px;background:#1F4FBF;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:0 4px}
+.plate .pf i{display:block;height:3px;border-radius:1px}
+.plate .pf i:nth-child(1){background:#239F40}.plate .pf i:nth-child(2){background:#fff}.plate .pf i:nth-child(3){background:#DA0000}
+.plate .pn{padding:0 7px;font-size:21px;font-weight:700;display:flex;align-items:center;letter-spacing:.5px}
+.plate .pl{font-size:20px;font-weight:700;display:flex;align-items:center;padding:0 2px}
+.plate .pr{border-left:1.5px solid #1C1F24;padding:0 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:17px;font-weight:700;line-height:1}
+.plate .pr small{font-size:8px;font-weight:600;margin-bottom:2px}
+.route{position:absolute;bottom:56px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;color:#7E8796;font-size:13px;white-space:nowrap}
+.route span.d{width:8px;height:8px;border-radius:50%;background:#2A323D}
+.route span.d.on{background:#7FE3D3;box-shadow:0 0 12px #7FE3D3}
+.route span.l{width:34px;height:1px;background:linear-gradient(90deg,#2A323D,#7FE3D3 50%,#2A323D)}
+@media (max-width:860px){.lg-scene{display:none}}
+</style>
+</helmet>
+<div class="lg-root" style="min-height: 100vh; display: flex; flex-wrap: wrap; font-family: Vazirmatn, sans-serif; color: #F2F4F7; background: radial-gradient(1200px 700px at 30% 20%, #10202A 0%, #07090D 60%)">
+
+  <section style="flex: 1 1 460px; max-width: 560px; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 56px 64px">
+    <header style="display: flex; align-items: center; gap: 12px">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><rect x="1" y="1" width="32" height="32" rx="10" fill="none" stroke="#7FE3D3" stroke-width="1.5"></rect><path d="M9 23V11l8 7 8-7v12" fill="none" stroke="#F2F4F7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      <div style="display: flex; flex-direction: column; line-height: 1.15">
+        <span style="font-size: 19px; font-weight: 700; letter-spacing: .2px">منیج</span>
+        <span style="font-size: 11px; color: #7E8796; letter-spacing: 1.5px" dir="ltr">MANAGE BY HEDAX</span>
+      </div>
+    </header>
+
+    <div style="display: flex; flex-direction: column; gap: 32px; padding: 40px 0">
+      <div style="display: flex; flex-direction: column; gap: 14px">
+        <h1 style="margin: 0; font-size: 44px; line-height: 1.25; font-weight: 800; letter-spacing: -.5px">هر خودرو،<br>یک مسیر روشن.</h1>
+        <p style="margin: 0; font-size: 17px; color: #A3ACBB; line-height: 1.8">منیج پیگیری می‌کند، شما تصمیم می‌گیرید.</p>
+      </div>
+
+      <div class="seg" role="tablist" aria-label="نوع ورود">
+        <button class="{{pinTab}}" onClick="{{toPin}}" type="button">کارکنان — ورود با پین</button>
+        <button class="{{passTab}}" onClick="{{toPass}}" type="button">مالک و مدیر سیستم</button>
+      </div>
+
+      <sc-if value="{{isPin}}" hint-placeholder-val="{{ true }}">
+        <form style="display: flex; flex-direction: column; gap: 22px">
+          <div class="lg-field">
+            <label for="u1">نام کاربری یا کد پرسنلی</label>
+            <input id="u1" class="lg-input" placeholder="مثلاً sahar.k یا ۱۰۲۴">
+          </div>
+          <div class="lg-field">
+            <label>پین چهاررقمی</label>
+            <div class="pin">
+              <input aria-label="رقم اول" maxlength="1" value="•">
+              <input aria-label="رقم دوم" maxlength="1" value="•">
+              <input aria-label="رقم سوم" maxlength="1">
+              <input aria-label="رقم چهارم" maxlength="1">
+            </div>
+          </div>
+          <button class="cta" type="button">ورود به میز کار</button>
+        </form>
+      </sc-if>
+      <sc-if value="{{isPass}}" hint-placeholder-val="{{ false }}">
+        <form style="display: flex; flex-direction: column; gap: 22px">
+          <div class="lg-field">
+            <label for="u2">ایمیل</label>
+            <input id="u2" class="lg-input" dir="ltr" placeholder="name@example.com">
+          </div>
+          <div class="lg-field">
+            <label for="p2">رمز عبور</label>
+            <input id="p2" class="lg-input" type="password" value="password">
+          </div>
+          <div class="lg-field">
+            <label for="o2">کد Google Authenticator</label>
+            <input id="o2" class="lg-input" dir="ltr" placeholder="۶ رقم" style="letter-spacing: 6px">
+          </div>
+          <button class="cta" type="button">ورود امن</button>
+        </form>
+      </sc-if>
+    </div>
+
+    <footer style="display: flex; justify-content: space-between; font-size: 12px; color: #6B7482">
+      <span>نمایندگی ۱۳۰۷ ایران‌خودرو · قم</span>
+      <span>یک محصول هداکس</span>
+    </footer>
+  </section>
+
+  <section class="lg-scene" style="flex: 999 1 560px; min-width: 0; min-height: 640px; position: relative; border-inline-start: 1px solid rgba(255,255,255,.05)">
+    <div class="scene" aria-hidden="true">
+      <div class="floor"></div>
+      <div class="stack">
+        <div class="f3d" style="transform: translate3d(-330px,-40px,0px); animation-delay: -2s; opacity: .55">
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: #7E8796"><span>سورن پلاس</span><span>تحویل</span></div>
+          <span class="plate"><span class="pf"><i></i><i></i><i></i></span><span class="pn">۴۷</span><span class="pl">ج</span><span class="pn">۸۱۲</span><span class="pr"><small>ایران</small>۱۶</span></span>
+          <div style="height: 4px; border-radius: 2px; background: #7FE3D3; width: 100%"></div>
+        </div>
+        <div class="f3d hot" style="transform: translate3d(-150px,-150px,60px); animation-delay: -4s">
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: #A3ACBB"><span style="color: #F2F4F7; font-weight: 700">ریرا</span><span style="color: #7FE3D3">نقاشی · جایگاه ۲</span></div>
+          <span class="plate"><span class="pf"><i></i><i></i><i></i></span><span class="pn">۲۳</span><span class="pl">ب</span><span class="pn">۴۵۶</span><span class="pr"><small>ایران</small>۱۶</span></span>
+          <div style="height: 4px; border-radius: 2px; background: linear-gradient(90deg, #7FE3D3 64%, #26303B 64%)"></div>
+        </div>
+        <div class="f3d" style="transform: translate3d(40px,-260px,120px); animation-delay: -1s">
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: #A3ACBB"><span style="color: #F2F4F7; font-weight: 700">تارا</span><span style="color: #F2B45C">منتظر قطعه</span></div>
+          <span class="plate"><span class="pf"><i></i><i></i><i></i></span><span class="pn">۶۸</span><span class="pl">د</span><span class="pn">۱۹۳</span><span class="pr"><small>ایران</small>۱۶</span></span>
+          <div style="height: 4px; border-radius: 2px; background: linear-gradient(90deg, #F2B45C 38%, #26303B 38%)"></div>
+        </div>
+      </div>
+      <div class="route">
+        <span>پذیرش</span><span class="d on"></span><span class="l"></span>
+        <span>کارشناسی</span><span class="d on"></span><span class="l"></span>
+        <span>قطعات</span><span class="d on"></span><span class="l"></span>
+        <span style="color: #F2F4F7">تعمیر</span><span class="d on"></span><span class="l"></span>
+        <span>تحویل</span><span class="d"></span>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(p){ super(p); this.state = { mode: 'pin' }; }
+  renderVals() {
+    const pin = this.state.mode === 'pin';
+    return {
+      isPin: pin, isPass: !pin,
+      pinTab: pin ? 'on' : '', passTab: pin ? '' : 'on',
+      toPin: () => this.setState({ mode: 'pin' }),
+      toPass: () => this.setState({ mode: 'pass' })
+    };
+  }
+}
+</script>
+</body>
+</html>

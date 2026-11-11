@@ -2,7 +2,7 @@
 
 ## Evidence (2026-11-01)
 
-`index (4).html` on the current platform branch has the same Git blob as `main`: `5c622860cefde56d7311f00cf6c8c9f7a10ac037`. It is the original single-file dashboard, kept alongside the platform. The deployed stack builds `apps/web` (Next.js/TypeScript) and `apps/api` (NestJS/TypeScript); neither serves that root HTML file. `deploy/preview/gate.html` is a separate, intentional lightweight login gate, not the dealership UI.
+`legacy/index (4).html` (moved from the repository root on 2026-11-10; content unchanged) on the current platform branch has the same Git blob as `main`: `5c622860cefde56d7311f00cf6c8c9f7a10ac037`. It is the original single-file dashboard, kept alongside the platform. The deployed stack builds `apps/web` (Next.js/TypeScript) and `apps/api` (NestJS/TypeScript); neither serves that root HTML file. `deploy/preview/gate.html` is a separate, intentional lightweight login gate, not the dealership UI.
 
 The prototype is also an actively used local tool: `feature/b2b-auto-report` adds its own companion, report imports, browser storage and tests; PR #1 adds appointments and PR #3 proposes a filename change. Those features and IndexedDB records are not automatically part of the new accident-repair platform. Preserve these branches and their launch paths until the owner decides their future.
 
