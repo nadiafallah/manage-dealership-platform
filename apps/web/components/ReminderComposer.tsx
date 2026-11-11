@@ -20,6 +20,9 @@ export interface ReminderDefaults {
   role?: Role;
   caseId?: string;
   caseLabel?: string;
+  /** One part line of the car (spec §9); sent only together with the case. */
+  partId?: string;
+  partLabel?: string;
   plate?: string | null;
   body?: string;
   source?: 'manual' | 'manager_report';
@@ -70,7 +73,7 @@ export function ReminderComposer({ open, onClose, defaults, onSent }: { open: bo
       const res = await api<{ recipients: number }>('/reminders', {
         body: {
           ...(mode === 'people' ? { userIds } : { role }),
-          ...(defaults?.caseId && withCase ? { caseId: defaults.caseId } : {}),
+          ...(defaults?.caseId && withCase ? { caseId: defaults.caseId, ...(defaults.partId ? { partId: defaults.partId } : {}) } : {}),
           ...(plate.trim() ? { plate: plate.trim() } : {}),
           body: body.trim(),
           urgency: urgent ? 'urgent' : 'normal',
@@ -131,7 +134,7 @@ export function ReminderComposer({ open, onClose, defaults, onSent }: { open: bo
         {defaults?.caseId && (
           <label className="check">
             <input type="checkbox" checked={withCase} onChange={(e) => setWithCase(e.target.checked)} />
-            <span>وصل به پرونده {defaults.caseLabel ? <bdi>{toPersianDigits(defaults.caseLabel)}</bdi> : ''}</span>
+            <span>وصل به پرونده {defaults.caseLabel ? <bdi>{toPersianDigits(defaults.caseLabel)}</bdi> : ''}{defaults.partLabel ? <> · قطعهٔ «{defaults.partLabel}»</> : ''}</span>
           </label>
         )}
         <label className="field">

@@ -81,6 +81,7 @@ Generated from controller decorators by `node scripts/check-docs.mjs --write`; C
 | GET | `/api/v1/cases/:id/wages` | [source](../apps/api/src/people/people.controllers.ts) |
 | GET | `/api/v1/cases/:id` | [source](../apps/api/src/accident/accident.controllers.ts) |
 | GET | `/api/v1/cases` | [source](../apps/api/src/accident/accident.controllers.ts) |
+| GET | `/api/v1/control-room` | [source](../apps/api/src/control-room/control-room.controller.ts) |
 | GET | `/api/v1/daily-reports/imports/:id/report` | [source](../apps/api/src/daily-reports/daily-reports.controller.ts) |
 | GET | `/api/v1/daily-reports/imports/:id/rows` | [source](../apps/api/src/daily-reports/daily-reports.controller.ts) |
 | GET | `/api/v1/daily-reports/imports/:id` | [source](../apps/api/src/daily-reports/daily-reports.controller.ts) |

@@ -18,6 +18,7 @@ import {PartsOperationNotices} from '@/components/PartsOperations';
 import {AlertsPanel} from '@/components/AlertsPanel';
 import {ReminderCards} from '@/components/ReminderCards';
 import {DeskBoard} from '@/components/DeskBoard';
+import {ControlRoom} from '@/components/ControlRoom';
 import type {DeskFolder} from '@manage/shared';
 
 const hasParts=(f:DeskFolder)=>f.parts.undecided+f.parts.inProgress+f.parts.ready>0;
@@ -48,5 +49,7 @@ export default function AccidentWorkspace(){
  if (w.key === 'expert') return <div className="stack"><ReminderCards/><DeskBoard title="میز کار کارشناس تصادفات" actors={['accident_expert']} mineOnly intro={can('case.create')?<Link className="m-btn" href="/cases/new">پذیرش جدید</Link>:undefined}/><AlertsPanel/><PartsOperationNotices/>{tools()}</div>;
  if (w.key === 'parts') return <div className="stack"><ReminderCards/><DeskBoard title="میز کار مسئول قطعات" actors={['parts_clerk']} initial="mine" filters={['mine','parts','all']} scope={hasParts} extra={partCounts}/><PartsWorkbench/>{tools('همهٔ صف‌ها')}</div>;
  if (w.key === 'admin') return <div className="stack"><ReminderCards/><DailyStatusPanel/><DeskBoard title="میز کار مدیر سیستم" actors={['accident_expert','parts_clerk']} initial="stuck" filters={['stuck','all','mine','behind','parts','delivery']}/>{tools('همهٔ ابزارهای پشتیبانی')}</div>;
+ if (w.key === 'manager') return <div className="stack"><ControlRoom/>{tools('گزارش‌ها و ابزارهای دیگر')}</div>;
+ if (w.key === 'owner') return <div className="stack"><ControlRoom title="اتاق کنترل" extra={<nav className="cr-glass cr-pad owner-tools" aria-label="تنظیمات و کارکنان"><strong>تنظیمات و کارکنان</strong><div className="row"><Link className="cr-link" href="/users">کارکنان و دعوت</Link><Link className="cr-link" href="/users#access-control">دسترسی‌ها</Link><Link className="cr-link" href="/users#owner-admin">اجازه‌های مدیر سیستم</Link><Link className="cr-link" href="/workshop/settings">سقف هشدارها، تقویم و جایگاه‌ها</Link><Link className="cr-link" href="/accidents">میزهای کار</Link></div></nav>}/>{tools('همهٔ ابزارها')}</div>;
  return <div className="stack"><div className="unit-breadcrumb"><Link href="/accidents">واحد تصادفات</Link><span aria-hidden="true"> / </span><span>{w.label}</span></div><header className="unit-header"><span className="workspace-symbol"><AppIcon name={w.icon}/></span><div><h1>میز کار {w.label}</h1><p className="muted">{w.description}</p></div></header>{legacy}</div>;
 }

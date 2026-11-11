@@ -1,12 +1,12 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
-import { DAILY_REPORT_KINDS, DAILY_REPORT_KIND_LABELS, isWorkingDay, permissionsFor, type DailyReportKind, type DailyTaskState, type Role } from '@manage/shared';
+import { and, desc, eq, inArray, isNull, lt, notInArray } from 'drizzle-orm';
+import { alertSettingsOf, DAILY_REPORT_KINDS, DAILY_REPORT_KIND_LABELS, isWorkingDay, normalizeRoles, partFlowState, permissionsFor, type AlertSettings, type DailyReportKind, type DailyTaskState, type Role } from '@manage/shared';
 import type { Actor } from '../auth/auth.types';
 import { AuditService } from '../audit/audit.service';
 import { APP_CONFIG, type AppConfig } from '../config';
 import { newId } from '../common/ids';
 import { DATABASE, type DatabaseHandle, type DbOrTx } from '../db/database';
-import { dailyReportProfiles, dailyTasks, notifications, tenants, users } from '../db/schema';
+import { cases, dailyReportProfiles, dailyTasks, departments, emdadRequests, notifications, partRequests, tasks, tenants, users, vehicles } from '../db/schema';
 import { tehranAt, tehranDate } from './daily-time';
 import { calendarAt } from '../workshop/work-calendar';
 
@@ -33,7 +33,10 @@ export class DailyTasksService implements OnApplicationBootstrap, OnApplicationS
 
   onApplicationBootstrap() {
     if (!this.cfg.DAILY_SCHEDULER || this.cfg.APP_ENV === 'test') return;
-    const run = () => void this.tick().catch((e: unknown) => this.logger.error(`daily task tick failed: ${e instanceof Error ? e.message : 'unknown'}`));
+    const run = () => {
+      void this.tick().catch((e: unknown) => this.logger.error(`daily task tick failed: ${e instanceof Error ? e.message : 'unknown'}`));
+      void this.sweepAlerts().catch((e: unknown) => this.logger.error(`alert sweep failed: ${e instanceof Error ? e.message : 'unknown'}`));
+    };
     this.timer = setInterval(run, 60_000);
     this.timer.unref();
     run();
@@ -97,6 +100,60 @@ export class DailyTasksService implements OnApplicationBootstrap, OnApplicationS
       }
     }
     return { created, notified };
+  }
+
+  /**
+   * Alerts of spec §9 that come from time, not from a click: «گزارش امداد ویژهٔ امروز
+   * بارگذاری نشده» at 12:00 (owner decision 7), «امداد ویژه دیر شده» after N days and
+   * «عقب‌تر از برنامه» when a step passes its planned end. Each reaches its people once
+   * (unique dedupe key per user); nothing is locked, only made visible.
+   */
+  async sweepAlerts(now = new Date()): Promise<number> {
+    const localDate = tehranDate(now);
+    let sent = 0;
+    for (const t of await this.db.select({ id: tenants.id, settings: tenants.settings }).from(tenants)) {
+      if (!(await this.isWorkday(t.id, localDate, now))) continue;
+      const settings: AlertSettings = alertSettingsOf(t.settings as Partial<Record<keyof AlertSettings, unknown>> | null);
+      const staff = await this.db.select({ id: users.id, roles: users.roles }).from(users).where(and(eq(users.tenantId, t.id), eq(users.isActive, true)));
+      const active = new Set(staff.map((u) => u.id));
+      const withRole = (r: Role) => staff.filter((u) => normalizeRoles(u.roles).includes(r)).map((u) => u.id);
+      const partsClerks = withRole('parts_clerk');
+      const rows: (typeof notifications.$inferInsert)[] = [];
+      const to = (userIds: (string | null | undefined)[], n: { kind: string; title: string; body: string; link: string; dedupeKey: string }) => {
+        for (const userId of new Set(userIds.filter((u): u is string => !!u && active.has(u)))) rows.push({ id: newId(), tenantId: t.id, userId, ...n });
+      };
+
+      const [emdadTask] = await this.db.select().from(dailyTasks).where(and(eq(dailyTasks.tenantId, t.id), eq(dailyTasks.localDate, localDate), eq(dailyTasks.kind, 'emdad')));
+      if (now >= tehranAt(localDate, '12:00') && emdadTask && emdadTask.status === 'pending') {
+        to([...partsClerks, ...withRole('system_admin')], { kind: 'daily_report_missing', title: 'گزارش امداد ویژهٔ امروز بارگذاری نشده', body: 'ساعت ۱۲ گذشت و گزارش امروز ثبت نشده؛ وضعیت قطعه‌ها با تاریخ آخرین گزارش نمایش داده می‌شود.', link: '/daily-reports?kind=emdad', dedupeKey: `daily-missing:emdad:${localDate}` });
+      }
+
+      const parts = await this.db
+        .select({ id: partRequests.id, caseId: partRequests.caseId, description: partRequests.description, status: partRequests.status, source: partRequests.source, consumedAt: partRequests.consumedAt, orderedAt: partRequests.orderedAt, createdAt: partRequests.createdAt, emdadCategory: emdadRequests.statusCategory, responsible: cases.responsibleUserId, plate: vehicles.plate })
+        .from(partRequests)
+        .innerJoin(cases, and(eq(cases.id, partRequests.caseId), eq(cases.status, 'open')))
+        .innerJoin(vehicles, eq(vehicles.id, cases.vehicleId))
+        .leftJoin(emdadRequests, eq(emdadRequests.partRequestId, partRequests.id))
+        .where(and(eq(partRequests.tenantId, t.id), notInArray(partRequests.status, ['cancelled', 'returned', 'handed_over'])));
+      for (const p of parts) {
+        const state = partFlowState({ status: p.status, source: p.source, consumedAt: p.consumedAt, emdadCategory: p.emdadCategory ?? undefined });
+        if (state !== 'emdad' || now.getTime() - (p.orderedAt ?? p.createdAt).getTime() <= settings.emdadLateDays * 86_400_000) continue;
+        to([...partsClerks, p.responsible], { kind: 'emdad_late', title: `امداد ویژه دیر شده: ${p.description}`, body: `بیش از ${settings.emdadLateDays} روز از ثبت امداد ویژه گذشته${p.plate ? ` (پلاک ${p.plate})` : ''}؛ پیگیری کنید.`, link: `/cases/${p.caseId}#case-parts`, dedupeKey: `emdad-late:${p.id}` });
+      }
+
+      const late = await this.db
+        .select({ id: tasks.id, caseId: tasks.caseId, plannedEndAt: tasks.plannedEndAt, assignedUserId: tasks.assignedUserId, department: departments.name, responsible: cases.responsibleUserId, plate: vehicles.plate })
+        .from(tasks)
+        .innerJoin(cases, and(eq(cases.id, tasks.caseId), eq(cases.status, 'open')))
+        .innerJoin(vehicles, eq(vehicles.id, cases.vehicleId))
+        .innerJoin(departments, eq(departments.id, tasks.departmentId))
+        .where(and(eq(tasks.tenantId, t.id), inArray(tasks.status, ['pending', 'in_progress', 'blocked']), lt(tasks.plannedEndAt, now)));
+      for (const k of late) {
+        to([k.responsible, k.assignedUserId], { kind: 'behind_schedule', title: `عقب‌تر از برنامه: ${k.department}`, body: `روز مجاز این قدم گذشته${k.plate ? ` (پلاک ${k.plate})` : ''}؛ برنامه را اصلاح یا پیگیری کنید.`, link: `/cases/${k.caseId}#case-tasks`, dedupeKey: `behind:${k.id}:${tehranDate(k.plannedEndAt!)}` });
+      }
+      if (rows.length) sent += (await this.db.insert(notifications).values(rows).onConflictDoNothing().returning({ id: notifications.id })).length;
+    }
+    return sent;
   }
 
   /** The dealership's work calendar decides whether daily files are expected today. */

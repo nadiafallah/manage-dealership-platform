@@ -39,6 +39,7 @@ interface Draft {
   urgency: ReminderUrgency;
   source: ReminderSource;
   caseId: string | null;
+  partRequestId?: string | null;
   plate: string | null;
   targetRole: Role | null;
 }
@@ -105,6 +106,13 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       }
       plate ??= kase.plate;
     }
+    if (input.partId) {
+      const [part] = await this.db
+        .select({ id: partRequests.id })
+        .from(partRequests)
+        .where(and(eq(partRequests.id, input.partId), eq(partRequests.tenantId, tenantId), eq(partRequests.caseId, input.caseId!)));
+      if (!part) throw badRequest('INVALID_PART', 'این قطعه در فهرست همین خودرو نیست');
+    }
     const staff = await this.db
       .select({ id: users.id, roles: users.roles })
       .from(users)
@@ -123,6 +131,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       urgency: input.urgency,
       source: input.source,
       caseId: input.caseId ?? null,
+      partRequestId: input.partId ?? null,
       plate,
       targetRole: input.role ?? null,
     });
@@ -165,7 +174,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
     return this.create(actor, {
       recipients: [...recipients].filter(id => allowed.has(id)),
       body: `قطعه «${part.p.description}» برای خودرو ${part.c.caseNumber} آماده تحویل است؛ جایگاه ${destination}. لطفاً از انبار دریافت و ثبت کنید.`,
-      urgency: 'normal', source: 'manual', caseId: part.c.id, plate: part.plate, targetRole: null,
+      urgency: 'normal', source: 'manual', caseId: part.c.id, partRequestId: part.p.id, plate: part.plate, targetRole: null,
     });
   }
 
@@ -216,6 +225,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
         tenantId,
         senderUserId: actor.user.id,
         caseId: draft.caseId,
+        partRequestId: draft.partRequestId ?? null,
         plate: draft.plate,
         body: draft.body,
         urgency: draft.urgency,
@@ -233,7 +243,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
         caseId: draft.caseId,
         action: 'reminder.sent',
         occurredAt: now,
-        after: { body: draft.body, urgency: draft.urgency, source: draft.source, targetRole: draft.targetRole, recipients: draft.recipients.length, plate: draft.plate },
+        after: { body: draft.body, urgency: draft.urgency, source: draft.source, targetRole: draft.targetRole, recipients: draft.recipients.length, plate: draft.plate, partRequestId: draft.partRequestId ?? null },
       });
     });
     return { id, recipients: draft.recipients.length };
@@ -249,9 +259,10 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
   async mine(actor: Actor, now = new Date()): Promise<MyReminders> {
     const received = await this.received(actor, undefined, 100, now);
     const sent = await this.db
-      .select({ r: reminders, caseNumber: cases.caseNumber })
+      .select({ r: reminders, caseNumber: cases.caseNumber, partDescription: partRequests.description })
       .from(reminders)
       .leftJoin(cases, and(eq(cases.id, reminders.caseId), eq(cases.tenantId, reminders.tenantId)))
+      .leftJoin(partRequests, eq(partRequests.id, reminders.partRequestId))
       .where(and(eq(reminders.tenantId, actor.user.tenantId), eq(reminders.senderUserId, actor.user.id)))
       .orderBy(desc(reminders.createdAt), desc(reminders.id))
       .limit(100);
@@ -265,12 +276,13 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       : [];
     return {
       received,
-      sent: sent.map(({ r, caseNumber }): SentReminder => ({
+      sent: sent.map(({ r, caseNumber, partDescription }): SentReminder => ({
         id: r.id,
         body: r.body,
         urgency: r.urgency as ReminderUrgency,
         source: r.source as ReminderSource,
         case: r.caseId && caseNumber ? { id: r.caseId, caseNumber } : null,
+        part: r.partRequestId && partDescription ? { id: r.partRequestId, description: partDescription } : null,
         plate: r.plate,
         targetRole: (r.targetRole as Role | null) ?? null,
         createdAt: r.createdAt.toISOString(),
@@ -283,15 +295,16 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
 
   private async received(actor: Actor, condition: SQL | undefined, limit: number, now: Date): Promise<ReceivedReminder[]> {
     const rows = await this.db
-      .select({ c: reminderRecipients, r: reminders, senderName: sender.displayName, senderRoles: sender.roles, senderOwner: sender.isOwner, caseNumber: cases.caseNumber })
+      .select({ c: reminderRecipients, r: reminders, senderName: sender.displayName, senderRoles: sender.roles, senderOwner: sender.isOwner, caseNumber: cases.caseNumber, partDescription: partRequests.description })
       .from(reminderRecipients)
       .innerJoin(reminders, and(eq(reminders.id, reminderRecipients.reminderId), eq(reminders.tenantId, reminderRecipients.tenantId)))
       .innerJoin(sender, eq(sender.id, reminders.senderUserId))
       .leftJoin(cases, and(eq(cases.id, reminders.caseId), eq(cases.tenantId, reminders.tenantId)))
+      .leftJoin(partRequests, eq(partRequests.id, reminders.partRequestId))
       .where(and(eq(reminderRecipients.tenantId, actor.user.tenantId), eq(reminderRecipients.userId, actor.user.id), condition))
       .orderBy(desc(reminders.createdAt), desc(reminderRecipients.id))
       .limit(limit);
-    return rows.map(({ c, r, senderName, senderRoles, senderOwner, caseNumber }) => ({
+    return rows.map(({ c, r, senderName, senderRoles, senderOwner, caseNumber, partDescription }) => ({
       id: c.id,
       reminderId: r.id,
       sender: { id: r.senderUserId, displayName: senderName, roleLabel: senderOwner ? 'مالک' : (normalizeRoles(senderRoles as string[]).map((role) => ROLE_LABELS[role])[0] ?? '') },
@@ -299,6 +312,7 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       urgency: r.urgency as ReminderUrgency,
       source: r.source as ReminderSource,
       case: r.caseId && caseNumber ? { id: r.caseId, caseNumber } : null,
+      part: r.partRequestId && partDescription ? { id: r.partRequestId, description: partDescription } : null,
       plate: r.plate,
       status: c.status as ReminderStatus,
       seenAt: iso(c.seenAt),

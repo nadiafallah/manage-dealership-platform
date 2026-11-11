@@ -58,6 +58,7 @@ export function ReminderCards({ compact = false }: { compact?: boolean }) {
             <p className="reminder-body">{toPersianDigits(r.body)}</p>
             <p className="xs muted">
               {r.case && can('case.read') ? <Link href={`/cases/${r.case.id}`}>پرونده <bdi>{toPersianDigits(r.case.caseNumber)}</bdi></Link> : r.case ? <>پرونده <bdi>{toPersianDigits(r.case.caseNumber)}</bdi></> : null}
+              {r.part ? <> · قطعهٔ «{r.part.description}»</> : null}
               {r.plate ? <> · پلاک <bdi>{toPersianDigits(r.plate)}</bdi></> : null} · {formatJalali(r.createdAt, { time: true })}
             </p>
             {r.status === 'seen' && (

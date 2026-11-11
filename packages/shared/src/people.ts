@@ -48,6 +48,8 @@ export const reminderSendSchema = z
     userIds: z.array(z.uuid()).max(50).default([]),
     role: z.enum(ROLES).optional(),
     caseId: z.uuid().optional(),
+    /** One part line of that car (spec §9: «وصل به خودرو یا قطعه»); needs caseId. */
+    partId: z.uuid().optional(),
     plate: z.string().trim().max(32).optional(),
     body: line(REMINDER_MAX_LENGTH),
     urgency: z.enum(REMINDER_URGENCIES).default('normal'),
@@ -55,7 +57,8 @@ export const reminderSendSchema = z
     source: z.enum(['manual', 'manager_report']).default('manual'),
   })
   .strict()
-  .refine((v) => v.userIds.length > 0 || !!v.role, { message: 'گیرنده را انتخاب کنید', path: ['userIds'] });
+  .refine((v) => v.userIds.length > 0 || !!v.role, { message: 'گیرنده را انتخاب کنید', path: ['userIds'] })
+  .refine((v) => !v.partId || !!v.caseId, { message: 'قطعه فقط همراه خودروی خودش وصل می‌شود', path: ['partId'] });
 export type ReminderSendInput = z.infer<typeof reminderSendSchema>;
 
 export const reminderRespondSchema = z.discriminatedUnion('action', [
@@ -86,6 +89,8 @@ export interface ReceivedReminder {
   urgency: ReminderUrgency;
   source: ReminderSource;
   case: ReminderCaseRef | null;
+  /** The part line the reminder is about, when one was attached. */
+  part?: { id: string; description: string } | null;
   plate: string | null;
   status: ReminderStatus;
   seenAt: string | null;
@@ -102,6 +107,7 @@ export interface SentReminder {
   urgency: ReminderUrgency;
   source: ReminderSource;
   case: ReminderCaseRef | null;
+  part?: { id: string; description: string } | null;
   plate: string | null;
   targetRole: Role | null;
   createdAt: string;

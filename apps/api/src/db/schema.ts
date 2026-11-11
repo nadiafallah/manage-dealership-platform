@@ -1256,6 +1256,8 @@ export const reminders = pgTable('reminders', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   senderUserId: uuid('sender_user_id').notNull().references(() => users.id),
   caseId: uuid('case_id').references(() => cases.id),
+  // Spec §9: a reminder is about a car and, optionally, one part line of it (migration 0022).
+  partRequestId: uuid('part_request_id').references(() => partRequests.id),
   plate: text('plate'),
   body: text('body').notNull(),
   urgency: text('urgency').notNull().default('normal'),

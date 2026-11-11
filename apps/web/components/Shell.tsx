@@ -30,7 +30,7 @@ export function Shell({children}:{children:ReactNode}){
  <nav className="nav" id="main-navigation" aria-label="واحدها و میزهای کار" onClick={e=>{if((e.target as HTMLElement).closest('a'))setOpen(false);}}>
  {nav('/launch','انتخاب میز کار','grid')}{technicianOnly?nav('/workshop/technician','کارهای من','wrench'):null}
  <Link href="/reminders" className="nav-reminders" aria-current={pathname==='/reminders'?'page':undefined}><AppIcon name="bell"/><span>تذکرها</span>{unseen>0&&<span className="nav-badge" aria-label={`${unseen} تذکر دیده‌نشده`}>{unseen.toLocaleString('fa-IR')}</span>}</Link>
- {!technicianOnly&&<>{nav('/','داشبورد','gauge',can('dashboard.read'))}
+ {!technicianOnly&&<>{nav('/control-room','اتاق کنترل','gauge',can('report.manager'))}{nav('/','داشبورد','chart',can('dashboard.read')&&!can('report.manager'))}
  <details className="nav-unit" key={`accident-${accident}`} open={accident||pathname==='/'}><summary><AppIcon name="car"/><span>واحد تصادفات</span></summary><div className="nav-sub">
  <p className="nav-caption">میزهای کار و پرونده‌ها</p>
  {nav(visibleWorkspaces(me).length===1?`/accidents/${visibleWorkspaces(me)[0].key}`:'/accidents',visibleWorkspaces(me).length===1?'میز کار من':'میزهای کار تصادفات','desk')}
@@ -62,7 +62,7 @@ export function backTarget(pathname:string,home:string):{href:string;label:strin
  return {href:home,label:'بازگشت به میز کار'};
 }
 
-const PAGE_TITLES:[RegExp,string][]=[[/^\/launch$/,'انتخاب میز کار'],[/^\/$/,'داشبورد'],[/^\/workshop\/settings/,'تقویم و جایگاه‌ها'],[/^\/workshop\/technician/,'کارهای من'],[/^\/workshop/,'برنامه و گزارش تعمیر'],[/^\/accidents/,'میز کار تصادفات'],[/^\/cases\/new/,'ثبت پرونده'],[/^\/cases\/import/,'ورود خودروها از اکسل'],[/^\/cases\/[^/]+/,'پرونده'],[/^\/cases/,'پرونده‌های تصادفی'],[/^\/reports/,'گزارش‌ها'],[/^\/daily-reports/,'گزارش‌های روزانه'],[/^\/stock/,'موجودی روزانه و رزرو'],[/^\/emdad/,'پیگیری امداد ویژه'],[/^\/users/,'کارکنان'],[/^\/reference-data/,'اطلاعات پایه'],[/^\/reminders/,'تذکرها']];
+const PAGE_TITLES:[RegExp,string][]=[[/^\/launch$/,'انتخاب میز کار'],[/^\/control-room/,'اتاق کنترل'],[/^\/$/,'داشبورد'],[/^\/workshop\/settings/,'تقویم و جایگاه‌ها'],[/^\/workshop\/technician/,'کارهای من'],[/^\/workshop/,'برنامه و گزارش تعمیر'],[/^\/accidents/,'میز کار تصادفات'],[/^\/cases\/new/,'ثبت پرونده'],[/^\/cases\/import/,'ورود خودروها از اکسل'],[/^\/cases\/[^/]+/,'پرونده'],[/^\/cases/,'پرونده‌های تصادفی'],[/^\/reports/,'گزارش‌ها'],[/^\/daily-reports/,'گزارش‌های روزانه'],[/^\/stock/,'موجودی روزانه و رزرو'],[/^\/emdad/,'پیگیری امداد ویژه'],[/^\/users/,'کارکنان'],[/^\/reference-data/,'اطلاعات پایه'],[/^\/reminders/,'تذکرها']];
 /** Browser tab title for each area, so several open tabs can be told apart. */
 export function pageTitle(pathname:string):string{
  const module=/^\/modules\/([^/]+)/.exec(pathname)?.[1];

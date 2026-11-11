@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { DailyReportsModule } from '../daily-reports/daily-reports.module';
 import { AlertsController } from '../alerts/alerts.controller';
 import { AlertsService } from '../alerts/alerts.service';
+import { ControlRoomController } from '../control-room/control-room.controller';
+import { ControlRoomService } from '../control-room/control-room.service';
 import { DeskController } from '../desk/desk.controller';
 import { DeskService } from '../desk/desk.service';
 import { WorkshopController } from '../workshop/workshop.controller';
@@ -42,6 +44,7 @@ import {
   controllers: [
     AlertsController,
     DeskController,
+    ControlRoomController,
     WorkshopController,
     ReferenceDataController,
     CasesController,
@@ -60,6 +63,7 @@ import {
   providers: [
     AlertsService,
     DeskService,
+    ControlRoomService,
     WorkshopService,
     ReferenceDataService,
     CasesService,

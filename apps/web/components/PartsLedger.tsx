@@ -24,6 +24,7 @@ import {
 } from '@manage/shared';
 import { api, errorMessage, fetcher, newKey } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { ReminderComposer } from './ReminderComposer';
 import { faNum, parseAmount, toPersianDigits } from '@/lib/format';
 import { useToast } from '@/lib/toast';
 import { QuotePanel, QuoteProposal } from './WorkshopQuotes';
@@ -170,6 +171,7 @@ export function PartsLedger({ kase, onChange }: { kase: CaseDetail; onChange?: (
 function PartRow({ kase, part: p, manage, expanded, onToggle, onDone }: { kase: CaseDetail; part: Part; manage: boolean; expanded: boolean; onToggle: () => void; onDone: () => Promise<void> }) {
   const { can } = useAuth();
   const [form, setForm] = useState<PartFlowAction | null>(null);
+  const [reminding, setReminding] = useState(false);
   const primary = manage ? primaryAction(p) : null;
   const detail = stateDetail(p);
   const choose = (a: PartFlowAction) => {
@@ -226,8 +228,10 @@ function PartRow({ kase, part: p, manage, expanded, onToggle, onDone }: { kase: 
             </div>
           )}
           {manage && form && <FlowForm kase={kase} part={p} action={form} onCancel={() => setForm(null)} onDone={async () => { setForm(null); await onDone(); }} />}
+          <div className="m-actions"><button type="button" className="m-btn2-s" onClick={() => setReminding(true)}>تذکر دربارهٔ این قطعه</button></div>
         </div>
       )}
+      <ReminderComposer open={reminding} onClose={() => setReminding(false)} defaults={{ caseId: kase.id, caseLabel: kase.caseNumber, plate: kase.vehicle.plate, partId: p.id, partLabel: p.description, ...(manage ? { userIds: kase.responsible ? [kase.responsible.id] : [] } : { role: 'parts_clerk' as const }) }} />
     </div>
   );
 }
