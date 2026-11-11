@@ -18,3 +18,4 @@ export * from './parts-workbench';
 export * from './manage-advisor';
 
 export * from './people';
+export * from './alerts';

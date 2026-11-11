@@ -39,10 +39,10 @@ test('documentation screenshots', async ({ page }, info) => {
   await page.getByTestId('part').first().waitFor();
   await page.getByTestId('parts-panel').screenshot({ path: out('parts-demo', project) });
 
-  // Demo case 3: personal payment, advance waiting for the manager.
+  // Demo case 3: personal payment; the advance decision is recorded on the cost alert.
   await page.goto('/cases');
   await page.locator('tbody tr').filter({ hasText: 'مشتری نمونه سه' }).click();
-  await page.getByTestId('finance-approval').first().waitFor();
+  await page.getByTestId('finance-panel').waitFor();
   await page.getByTestId('finance-panel').screenshot({ path: out('finance-demo', project) });
   await page.screenshot({ path: out('case-personal', project), fullPage: true });
 

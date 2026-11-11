@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { login, openCaseSections } from './helpers';
 
 // Issues #9 and #10 in the browser, on demo case 3 (personal payment): the
-// customer approved the estimate and the expert proposed an advance.
+// customer approved the estimate. Payments are not recorded in Manage any more
+// (spec decision 3); the advance decision is an answer on the cost alert.
 async function openCase3(page: Page, user: string) {
   // Leave the app first: a background request of the old page would otherwise
   // get 401 after the cookies are cleared and redirect, aborting our navigation.
@@ -15,19 +16,15 @@ async function openCase3(page: Page, user: string) {
   await expect(page.getByTestId('finance-panel')).toBeVisible();
 }
 
-test('coordinator collects payment and records customer price approval; parts orders and hands over', async ({
+test('expert records customer price approval; parts orders and hands over', async ({
   page,
 }) => {
   const dialog = page.getByRole('dialog');
-  const gate = page.getByTestId('finance-gate');
 
-  // Unified accident coordinator records the customer's receipt directly.
+  // No payment buttons: the finance panel only explains where the decision is recorded.
   await openCase3(page, 'expert');
-  await page.getByRole('button', {name:'ثبت دریافت از مشتری',exact:true}).click();
-  await dialog.getByLabel('مبلغ دریافتی (ریال) *').fill('21500000');
-  await dialog.getByLabel('شماره پیگیری / رسید پرداخت *').fill('POS-E2E-1');
-  await dialog.getByRole('button',{name:'ثبت',exact:true}).click();
-  await expect(gate).toContainText('پیش‌پرداخت دریافت شده');
+  await expect(page.getByTestId('finance-gate')).toContainText('هشدار هزینه');
+  await expect(page.getByRole('button', { name: 'ثبت دریافت از مشتری', exact: true })).toHaveCount(0);
   // Market purchase: parts quotes, the coordinator records customer consent.
   await openCase3(page, 'parts');
   const currentParts=await (await page.request.get('/api/v1/cases/'+page.url().split('/cases/')[1]+'/parts')).json();
@@ -79,5 +76,4 @@ test('coordinator collects payment and records customer price approval; parts or
   // History (not visible to the parts clerk) records every step with its actor.
   await openCase3(page, 'manager');
   await expect(page.locator('.timeline')).toContainText('تحویل قطعه به واحد تعمیر');
-  await expect(page.locator('.timeline')).toContainText('ثبت دریافت تسویه');
 });

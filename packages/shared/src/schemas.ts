@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ALERT_KINDS, ALERT_RESPONSES } from './alerts';
 import { REPAIR_TRADES } from './workshop';
 import { PIN_LOGIN_ROLES } from './permissions';
 import {
@@ -99,17 +100,20 @@ export const technicianSignOutSchema = z.object({ reason: z.string().trim().max(
 export const technicianActiveSchema = z.object({ active: z.boolean(), reason: z.string().trim().max(300).optional() });
 export type TechnicianActiveInput = z.infer<typeof technicianActiveSchema>;
 
-/** Coordinator's answer to a non-blocking alert (advance or parts amount). */
+/** The accident expert's advance decision on a non-blocking cost alert (spec section 9). */
 export const alertResponseSchema = z.object({
-  kind: z.enum(['advance', 'parts_amount']),
+  kind: z.enum(ALERT_KINDS),
   level: z.number().int().min(1).max(1000),
-  response: z.enum(['received', 'not_received', 'not_needed']),
+  response: z.enum(ALERT_RESPONSES),
   note: z.string().trim().max(500).optional(),
 });
 export type AlertResponseInput = z.infer<typeof alertResponseSchema>;
 
+/** Thresholds set by the system administrator or the owner. Omitted fields keep their current value. */
 export const alertSettingsSchema = z.object({
   partsAlertThresholdRial: z.number().int().min(1_000_000).max(1_000_000_000_000),
+  expensivePartThresholdRial: z.number().int().min(1_000_000).max(1_000_000_000_000).optional(),
+  emdadLateDays: z.number().int().min(1).max(60).optional(),
 });
 export type AlertSettingsInput = z.infer<typeof alertSettingsSchema>;
 export type TechnicianPinInput = z.infer<typeof technicianPinSchema>;

@@ -27,14 +27,9 @@ test('QC history, settlement, financial close and handover archive the case', as
   await expect(page.getByTestId('task').filter({ hasText: 'کار اصلاحی کنترل کیفیت' })).toHaveCount(1);
   await expect(panel.getByRole('button', { name: 'تحویل خودرو' })).toBeDisabled();
 
-  // A second accident expert: record the settlement, then close financially.
+  // A second accident expert closes financially: the invoice is issued in the
+  // accounting system, so no settlement is recorded in Manage (spec decision 3).
   await openCase5(page, 'supervisor');
-  await expect(panel).toContainText('سهم مشتری کامل دریافت نشده است');
-  await page.getByTestId('finance-panel').getByRole('button', { name: 'ثبت دریافت از مشتری' }).click();
-  await expect(dialog.getByLabel('مبلغ دریافتی (ریال) *')).toHaveValue('8000000');
-  await dialog.getByLabel('شماره پیگیری / رسید پرداخت *').fill('POS-E2E-5');
-  await dialog.getByRole('button', { name: 'ثبت', exact: true }).click();
-  await expect(page.getByTestId('settlement-payment')).toContainText('POS-E2E-5');
   await panel.getByRole('button', { name: 'بستن مالی' }).click();
   await dialog.getByRole('button', { name: 'ثبت', exact: true }).click();
   await expect(panel.getByText('انجام شد', { exact: true })).toHaveCount(2);

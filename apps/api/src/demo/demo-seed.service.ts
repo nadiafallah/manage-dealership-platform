@@ -8,7 +8,6 @@ import { AssessmentsService } from '../assessments/assessments.service';
 import { hashPassword } from '../auth/password';
 import type { Actor } from '../auth/auth.types';
 import { BlockersService } from '../blockers/blockers.service';
-import { FinanceService } from '../finance/finance.service';
 import { PartsService } from '../parts/parts.service';
 import { CasesService } from '../cases/cases.service';
 import { CompletionService } from '../completion/completion.service';
@@ -55,7 +54,6 @@ export class DemoSeedService {
     private readonly blockers: BlockersService,
     private readonly assessments: AssessmentsService,
     private readonly parts: PartsService,
-    private readonly finance: FinanceService,
     private readonly completion: CompletionService,
   ) {}
 
@@ -298,7 +296,8 @@ export class DemoSeedService {
     });
 
     // 3. Personal payment, received today; contact details still unknown. The
-    // customer approved the estimate; parts wait for the advance payment.
+    // customer approved the estimate; the advance decision is the expert's
+    // answer on the cost alert (spec section 9), nothing waits for it.
     const c3 = await this.cases.create(expert, {
       customer: { fullName: 'مشتری نمونه سه' },
       vehicle: { brand: 'ایران‌خودرو', model: 'تارا', plate: '۳۳ د ۳۳۳ - ۳۰' },
@@ -343,11 +342,6 @@ export class DemoSeedService {
       rejectedItemIds: [],
     });
     await this.parts.fromAssessment(expert, c3.id, { source: 'external' });
-    await this.finance.propose(expert, c3.id, {
-      kind: 'advance',
-      amountRial: 15_000_000,
-      reason: 'پیش‌پرداخت قطعه و نیمی از اجرت',
-    });
 
     // 4. Vehicle already in the workshop before Manage: legacy entry, overdue.
     const c4 = await this.cases.create(expert, {

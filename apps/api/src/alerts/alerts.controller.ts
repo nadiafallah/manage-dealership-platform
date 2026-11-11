@@ -32,6 +32,6 @@ export class AlertsController {
 
   @RequirePermissions('settings.manage') @Put('settings/alerts')
   save(@CurrentActor() actor: Actor, @Body(new ZodPipe(alertSettingsSchema)) body: AlertSettingsInput) {
-    return this.alerts.saveSettings(actor, body.partsAlertThresholdRial);
+    return this.alerts.saveSettings(actor, body);
   }
 }

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -15,19 +15,21 @@ import {
 } from '@manage/shared';
 import { AuditService } from '../audit/audit.service';
 import type { Actor } from '../auth/auth.types';
-import { assertNotFuture, CasesService } from '../cases/cases.service';
-import { badRequest, forbidden, notFound, versionConflict } from '../common/errors';
-import { newId } from '../common/ids';
+import { CasesService } from '../cases/cases.service';
+import { AppError, notFound, versionConflict } from '../common/errors';
 import { DATABASE, type DatabaseHandle, type DbOrTx } from '../db/database';
 import { assessments, caseFinance, casePayments, cases, financialApprovals, partRequests, users } from '../db/schema';
 
-type ApprovalRow = typeof financialApprovals.$inferSelect;
 
 const proposedByUser = alias(users, 'finance_proposed_by');
 const decidedByUser = alias(users, 'finance_decided_by');
 const paidByUser = alias(users, 'finance_paid_by');
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+
+/** The advance / exception / cashier flow is switched off (spec sections 3 and 9); old rows stay readable. */
+export const financeFlowRetired = () =>
+  new AppError(HttpStatus.GONE, 'FINANCE_FLOW_RETIRED', 'روال پیشنهاد، تأیید و دریافت پیش‌پرداخت حذف شده است؛ تصمیم پیش‌پرداخت را روی هشدار هزینهٔ همان پرونده ثبت کنید. فاکتور و دریافت در سامانهٔ حسابداری ثبت می‌شود.');
 
 // Sources that are bought for the case; stock and customer parts are not purchases.
 export const PURCHASE_SOURCES = ['company', 'external', 'insurer_supplier'];
@@ -138,153 +140,24 @@ export class FinanceService {
     return this.summary(actor, caseId);
   }
 
-  async propose(actor: Actor, caseId: string, input: ProposeFinanceInput): Promise<CaseFinance> {
-    const tenantId = actor.user.tenantId;
-    await this.db.transaction(async (tx) => {
-      await this.cases.loadForWrite(tx, tenantId, caseId);
-      const estimate = await this.estimateOf(tx, tenantId, caseId);
-      const open = await tx
-        .select({ id: financialApprovals.id })
-        .from(financialApprovals)
-        .where(
-          and(
-            eq(financialApprovals.caseId, caseId),
-            eq(financialApprovals.kind, input.kind),
-            eq(financialApprovals.status, 'proposed'),
-          ),
-        );
-      if (open.length) {
-        throw badRequest('FINANCE_PROPOSAL_OPEN', 'یک پیشنهاد مشابه هنوز منتظر تصمیم مدیر است');
-      }
-      const id = newId();
-      const [row] = await tx
-        .insert(financialApprovals)
-        .values({
-          id,
-          tenantId,
-          caseId,
-          kind: input.kind,
-          amountRial: input.amountRial,
-          coversEstimateRial: estimate,
-          reason: input.reason,
-          proposedBy: actor.user.id,
-          isTest: actor.user.isTestTenant,
-        })
-        .returning();
-      await this.audit.record(tx, actor, {
-        entityType: 'finance',
-        entityId: id,
-        caseId,
-        action: 'finance.proposed',
-        reason: input.reason,
-        after: { kind: input.kind, amountRial: input.amountRial, estimateRial: estimate },
-        snapshot: { version: 1, row: row! },
-      });
-    });
-    return this.summary(actor, caseId);
+  /** Retired (spec section 9): the expert records the advance decision on the cost alert instead. */
+  async propose(_actor: Actor, _caseId: string, _input: ProposeFinanceInput): Promise<CaseFinance> {
+    throw financeFlowRetired();
   }
 
-  async decide(actor: Actor, id: string, input: FinanceDecisionInput): Promise<CaseFinance> {
-    const a = await this.db.transaction(async (tx) => {
-      const a = await this.loadForWrite(tx, actor.user.tenantId, id, input.expectedVersion);
-      if (a.status !== 'proposed') throw badRequest('FINANCE_NOT_PROPOSED', 'این پیشنهاد قبلاً تعیین تکلیف شده است');
-      // Separation of duties: nobody approves their own proposal.
-      if (a.proposedBy === actor.user.id) {
-        throw forbidden('پیشنهاددهنده نمی‌تواند پیشنهاد خود را تأیید یا رد کند');
-      }
-      const status = input.decision === 'approve' ? 'approved' : 'rejected';
-      const saved = await this.save(tx, a, {
-        status,
-        decidedAt: new Date(),
-        decidedBy: actor.user.id,
-        decisionNote: input.note ?? null,
-      });
-      await this.audit.record(tx, actor, {
-        entityType: 'finance',
-        entityId: id,
-        caseId: a.caseId,
-        action: status === 'approved' ? 'finance.approved' : 'finance.rejected',
-        reason: input.note ?? null,
-        after: { kind: a.kind, amountRial: a.amountRial, status },
-        snapshot: { version: saved.version, row: saved },
-      });
-      return saved;
-    });
-    return this.summary(actor, a.caseId);
+  /** Retired: the service manager no longer approves advances (spec section 9). */
+  async decide(_actor: Actor, _id: string, _input: FinanceDecisionInput): Promise<CaseFinance> {
+    throw financeFlowRetired();
   }
 
-  async confirmPayment(actor: Actor, id: string, input: FinancePaymentInput): Promise<CaseFinance> {
-    const at = input.at ? new Date(input.at) : new Date();
-    assertNotFuture(at, 'زمان دریافت نمی‌تواند در آینده باشد');
-    const a = await this.db.transaction(async (tx) => {
-      const a = await this.loadForWrite(tx, actor.user.tenantId, id, input.expectedVersion);
-      if (a.kind !== 'advance') throw badRequest('FINANCE_NOT_ADVANCE', 'فقط دریافت پیش‌پرداخت ثبت می‌شود');
-      if (a.status !== 'approved') {
-        throw badRequest('FINANCE_NOT_APPROVED', 'دریافت فقط برای پیش‌پرداخت تأییدشده توسط مدیر ثبت می‌شود');
-      }
-      if (a.proposedBy === actor.user.id) throw forbidden('پیشنهاددهنده نمی‌تواند دریافت را تأیید کند');
-      const saved = await this.save(tx, a, {
-        status: 'paid',
-        paidAt: at,
-        paymentRef: input.paymentRef,
-        paymentConfirmedBy: actor.user.id,
-      });
-      await this.audit.record(tx, actor, {
-        entityType: 'finance',
-        entityId: id,
-        caseId: a.caseId,
-        action: 'finance.paid',
-        occurredAt: at,
-        after: { amountRial: a.amountRial, paymentRef: input.paymentRef },
-        snapshot: { version: saved.version, row: saved },
-      });
-      return saved;
-    });
-    return this.summary(actor, a.caseId);
+  /** Retired: there is no cashier confirmation any more (spec section 3). */
+  async confirmPayment(_actor: Actor, _id: string, _input: FinancePaymentInput): Promise<CaseFinance> {
+    throw financeFlowRetired();
   }
 
-  /** Settlement payment of the customer share (cashier); never more than the balance. */
-  async recordPayment(actor: Actor, caseId: string, input: SettlementPaymentInput): Promise<CaseFinance> {
-    const tenantId = actor.user.tenantId;
-    const at = input.at ? new Date(input.at) : new Date();
-    assertNotFuture(at, 'زمان دریافت نمی‌تواند در آینده باشد');
-    await this.db.transaction(async (tx) => {
-      const kase = await this.cases.loadForWrite(tx, tenantId, caseId);
-      if (kase.status !== 'open') throw badRequest('CASE_CLOSED', 'پرونده بسته شده است');
-      const f = await this.summaryOn(tx, tenantId, caseId);
-      if (f.balanceRial === null) throw badRequest('SHARES_UNKNOWN', 'سهم مشتری مشخص نشده است؛ ابتدا سهم‌ها را ثبت کنید');
-      if (input.amountRial > f.balanceRial) {
-        throw badRequest('PAYMENT_EXCEEDS_BALANCE', 'مبلغ دریافتی بیشتر از مانده سهم مشتری است', {
-          balanceRial: f.balanceRial,
-        });
-      }
-      const id = newId();
-      const [row] = await tx
-        .insert(casePayments)
-        .values({
-          id,
-          tenantId,
-          caseId,
-          amountRial: input.amountRial,
-          paymentRef: input.paymentRef,
-          paidAt: at,
-          note: input.note ?? null,
-          recordedBy: actor.user.id,
-          isTest: actor.user.isTestTenant,
-        })
-        .returning();
-      await this.audit.record(tx, actor, {
-        entityType: 'finance',
-        entityId: id,
-        caseId,
-        action: 'finance.payment_recorded',
-        occurredAt: at,
-        reason: input.note ?? null,
-        after: { amountRial: input.amountRial, paymentRef: input.paymentRef },
-        snapshot: { version: 1, row: row! },
-      });
-    });
-    return this.summary(actor, caseId);
+  /** Retired: the official invoice and payments are recorded in the accounting system, outside Manage (spec decision 3). */
+  async recordPayment(_actor: Actor, _caseId: string, _input: SettlementPaymentInput): Promise<CaseFinance> {
+    throw financeFlowRetired();
   }
 
   // ------------------------------------------------------------------- gate
@@ -449,28 +322,5 @@ export class FinanceService {
       approvals,
       payments,
     };
-  }
-
-  // ---------------------------------------------------------------- helpers
-
-  private async loadForWrite(tx: DbOrTx, tenantId: string, id: string, expectedVersion: number) {
-    const [a] = await tx
-      .select()
-      .from(financialApprovals)
-      .where(and(eq(financialApprovals.id, id), eq(financialApprovals.tenantId, tenantId)));
-    if (!a) throw notFound('پیشنهاد مالی');
-    if (a.version !== expectedVersion) throw versionConflict(a.version);
-    await this.cases.loadForWrite(tx, tenantId, a.caseId);
-    return a;
-  }
-
-  private async save(tx: DbOrTx, a: ApprovalRow, patch: Partial<ApprovalRow>): Promise<ApprovalRow> {
-    const [row] = await tx
-      .update(financialApprovals)
-      .set({ ...patch, updatedAt: new Date(), version: a.version + 1 })
-      .where(and(eq(financialApprovals.id, a.id), eq(financialApprovals.version, a.version)))
-      .returning();
-    if (!row) throw versionConflict();
-    return row;
   }
 }

@@ -30,6 +30,7 @@ it('demo dealership seeds through the real services with realistic states', asyn
     awaitingAuthorization: 0,
     partsOverdue: 1,
     partsToOrder: 1,
-    financePending: 1,
+    // The advance proposal flow is retired (spec section 9): nothing waits for a finance decision.
+    financePending: 0,
   });
 });

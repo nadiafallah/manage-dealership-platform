@@ -634,18 +634,22 @@ export interface PartDiscrepancy {
   version: number;
 }
 
-/** A non-blocking alert for the accident coordinator (see AlertsService). */
+/** A non-blocking cost alert for the accident expert (see AlertsService and alerts.ts). */
 export interface CaseAlert {
   caseId: string;
   caseNumber: string;
   plate: string | null;
   vehicleLabel: string;
   coverageType: string;
-  kind: 'advance' | 'parts_amount';
+  kind: 'parts_amount' | 'expensive_part';
   level: number;
-  /** parts_amount only: current parts total and the threshold, in Rial. */
+  /** parts_amount: the parts total; expensive_part: the amount of the expensive line (Rial). */
   totalRial: number | null;
   thresholdRial: number | null;
+  /** expensive_part only: the line that raised the alert. */
+  partDescription: string | null;
+  /** The case's accident expert (who answers), when one is set. */
+  responsible: { id: string; displayName: string } | null;
 }
 
 export const ALERT_RESPONSE_LABELS = { received: 'گرفتم', not_received: 'نگرفتم', not_needed: 'لازم نیست' } as const;

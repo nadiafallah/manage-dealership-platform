@@ -19,7 +19,7 @@ import {
 import { AuditService } from '../audit/audit.service';
 import type { Actor } from '../auth/auth.types';
 import { assertNotFuture, CasesService, MINUTE_TOLERANCE_MS } from '../cases/cases.service';
-import { badRequest, forbidden, notFound } from '../common/errors';
+import { badRequest, notFound } from '../common/errors';
 import { newId } from '../common/ids';
 import { DATABASE, type DatabaseHandle, type DbOrTx } from '../db/database';
 import { assessments, blockers, cases, departments, partRequests, qcInspections, tasks, users } from '../db/schema';
@@ -223,9 +223,10 @@ export class CompletionService {
   }
 
   /**
-   * Settlement: the customer share is fully received, or the service manager
-   * accepts the remaining balance with a reason. The estimate and share at the
-   * close are kept so a later supplement or share change invalidates it.
+   * Financial close: the statement of the current final assessment is settled.
+   * Invoicing and payments are recorded in the accounting system (spec decision 3),
+   * so no balance or payer share is checked. The estimate at the close is kept so
+   * a later supplement invalidates it.
    */
   async financialClose(actor: Actor, caseId: string, input: FinancialCloseInput): Promise<CaseCompletion> {
     await this.db.transaction(async (tx) => {
@@ -233,15 +234,8 @@ export class CompletionService {
       assertOpen(kase);
       const ev = await this.evaluate(tx, kase);
       if (ev.financialValid) throw badRequest('ALREADY_CLOSED', 'بستن مالی قبلاً انجام شده است');
-      const balance = ev.financialIssues.find((i) => i.code === 'balance_due');
-      const others = blocking(ev.financialIssues).filter((i) => i.code !== 'balance_due');
-      if (others.length || (balance && !input.waiveBalance)) {
-        const issues = balance ? [...others, balance] : others;
-        throw badRequest('FINANCIAL_CLOSE_BLOCKED', `بستن مالی ممکن نیست: ${listOf(issues)}`, { issues });
-      }
-      if (balance && !actor.user.permissions.has('finance.approve') && !actor.user.permissions.has('case.release_authorize')) {
-        throw forbidden('خروج با مانده سهم مشتری به اختیار تأیید خروج و ثبت دلیل نیاز دارد');
-      }
+      const issues = blocking(ev.financialIssues);
+      if (issues.length) throw badRequest('FINANCIAL_CLOSE_BLOCKED', `بستن مالی ممکن نیست: ${listOf(issues)}`, { issues });
       await this.cases.applyPatch(
         tx,
         actor,
@@ -252,7 +246,8 @@ export class CompletionService {
           financialCloseNote: input.note ?? null,
           financialCloseEstimateRial: ev.finance.estimateRial,
           financialCloseShareRial: ev.finance.customerShareRial,
-          financialCloseWaivedRial: balance?.amountRial ?? 0,
+          // No balance gate any more (spec decision 3); kept for the column's history.
+          financialCloseWaivedRial: 0,
         },
         'case.financial_closed',
         input.note ?? null,
@@ -444,20 +439,17 @@ export class CompletionService {
       blocking(technicalIssues).length === 0;
 
     // ---- financial
+    // Spec decision 3: the official invoice and payments live in the accounting
+    // system. Manage only checks that the final statement is settled on the
+    // current assessment; payer shares and the customer balance never block.
     const finance = await this.finance.summaryOn(db, tenantId, caseId);
     const financialIssues: CompletionIssue[] = [];
     if (!versions.some((v) => v.status === 'final')) financialIssues.push(issue('no_final_assessment'));
     financialIssues.push(...assessmentIssues);
-    if (finance.customerShareRial === null) financialIssues.push(issue('shares_unknown'));
-    const pending = finance.approvals.filter((a) => a.status === 'proposed').length;
-    if (pending) financialIssues.push(issue('finance_pending', { count: pending }));
-    if (finance.balanceRial) financialIssues.push(issue('balance_due', { amountRial: finance.balanceRial }));
     const financialValid =
       !!kase.financialClosedAt &&
       finance.estimateRial === kase.financialCloseEstimateRial &&
-      finance.customerShareRial === kase.financialCloseShareRial &&
-      (finance.balanceRial ?? 0) <= (kase.financialCloseWaivedRial ?? 0) &&
-      blocking(financialIssues).every((i) => i.code === 'balance_due');
+      blocking(financialIssues).length === 0;
 
     const deliveryIssues: CompletionIssue[] = [];
     if (!technicalValid) deliveryIssues.push(issue('technical_not_closed'));
