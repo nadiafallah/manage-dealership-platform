@@ -37,7 +37,7 @@ test('documentation screenshots', async ({ page }, info) => {
   await page.goto('/cases');
   await page.locator('tbody tr').filter({ hasText: 'مشتری نمونه دو' }).click();
   await page.getByTestId('part').first().waitFor();
-  await page.getByTestId('parts-panel').screenshot({ path: out('parts-demo', project) });
+  await page.getByTestId('parts-ledger').screenshot({ path: out('parts-demo', project) });
 
   // Demo case 3: personal payment; the advance decision is recorded on the cost alert.
   await page.goto('/cases');

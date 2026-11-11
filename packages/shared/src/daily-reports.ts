@@ -79,13 +79,14 @@ export const EMDAD_MATCH_LABELS: Record<EmdadMatchStatus, string> = {
   unmatched: 'بدون پرونده در منیج',
 };
 
-export const RESERVATION_STATUSES = ['reserved', 'issued', 'released', 'cancelled'] as const;
+export const RESERVATION_STATUSES = ['reserved', 'issued', 'released', 'cancelled', 'returned'] as const;
 export type ReservationStatus = (typeof RESERVATION_STATUSES)[number];
 export const RESERVATION_STATUS_LABELS: Record<ReservationStatus, string> = {
   reserved: 'رزرو داخلی منیج',
-  issued: 'حواله/خروج از انبار',
+  issued: 'تحویل به جایگاه',
   released: 'آزاد شد',
   cancelled: 'خروج لغو شد',
+  returned: 'مرجوعی؛ به موجودی برگشت',
 };
 export const RESERVATION_ACTIONS = ['issue', 'release', 'cancel', 'reflect'] as const;
 export type ReservationAction = (typeof RESERVATION_ACTIONS)[number];
@@ -93,7 +94,7 @@ export const RESERVATION_ACTION_LABELS: Record<ReservationAction, string> = {
   issue: 'ثبت خروج از انبار',
   release: 'آزادکردن رزرو',
   cancel: 'لغو خروج ثبت‌شده',
-  reflect: 'تأیید انعکاس در گزارش انبار',
+  reflect: 'با پایان کار خودکار',
 };
 
 export const STOCK_CURRENCIES = ['IRR', 'IRT'] as const;
@@ -246,6 +247,8 @@ export interface DailyImport {
 }
 
 export interface StockOption {
+  /** Open cases holding this code and location (active reservation or handed over, case still open). */
+  reservedFor?: { caseId: string; caseNumber: string; quantity: string }[];
   fullStockCode: string;
   rawCode: string;
   basePartNumber: string | null;

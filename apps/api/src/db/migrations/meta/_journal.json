@@ -148,6 +148,13 @@
       "when": 1794336859101,
       "tag": "0020_six_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794337723150,
+      "tag": "0021_part_price_notices",
+      "breakpoints": true
     }
   ]
 }

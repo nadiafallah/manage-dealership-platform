@@ -1,5 +1,5 @@
 import { buildEmdadXml, buildStockXlsx, emdadRow, EMDAD_HEADERS } from './fixtures';
-import { detectFormat, readSpreadsheetML, SpreadsheetError } from './spreadsheet-formats';
+import { detectFormat, readHtmlTable, readSpreadsheetML, SpreadsheetError } from './spreadsheet-formats';
 
 describe('malformed SpreadsheetML cells', () => {
   it('refuses a broken cell instead of shifting later columns', () => {
@@ -56,5 +56,35 @@ describe('daily report formats', () => {
     expect(Date.now() - t).toBeLessThan(30_000);
     // The reader keeps one copy of the sheet text plus the current row.
     expect(process.memoryUsage().heapUsed - before).toBeLessThan(300 * 1024 * 1024);
+  });
+});
+
+describe('stock report of the business system: an HTML table saved as .xls (spec section 11)', () => {
+  const html = '\r\n  \uFEFF<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><style>td{}</style></head><body>' +
+    '<table><tr><td>گزارش موجودی</td></tr></table>' +
+    '<table border=1><thead><tr><th>كد كالا</th><th>شرح كالا</th><th colspan=2>موجودي</th><th>آدرس</th></tr></thead>' +
+    '<tbody><tr><td>_x001F_ 1234567801</td><td>لنت &amp; كفشك</td><td>3</td><td></td><td>A-01</td></tr>' +
+    '<tr><td>0012345601<td>بوش&nbsp;طبق<td>1.5<td><td>B-02</tr><!-- <tr><td>hidden</td></tr> --></tbody></table></body></html>';
+  const isCode = (c: string) => c.replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\s+/g, '') === 'کدکالا';
+
+  it('is detected from content despite whitespace and a byte-order mark before <html>', () => {
+    expect(detectFormat(new TextEncoder().encode(html))).toBe('html_table');
+    expect(detectFormat(new TextEncoder().encode('<html><body>not a sheet</body></html>'))).toBe('unknown');
+  });
+
+  it('reads the table that has «کد کالا» (Arabic letters), honours colspan, entities and unclosed cells', () => {
+    const r = readHtmlTable(new TextEncoder().encode(html), { headerProbe: isCode });
+    expect(r.diagnostics).toMatchObject({ leadingWhitespace: 5, charset: 'utf-8', tables: 2 });
+    expect(r.rows).toEqual([
+      ['كد كالا', 'شرح كالا', 'موجودي', '', 'آدرس'],
+      ['_x001F_ 1234567801', 'لنت & كفشك', '3', '', 'A-01'],
+      ['0012345601', 'بوش طبق', '1.5', '', 'B-02'],
+    ]);
+  });
+
+  it('decodes a windows-1256 page declared in its meta tag and refuses a file without a table', () => {
+    const w = Buffer.from('<html><meta charset="windows-1256"><table><tr><td>\xe4\xc7\xe3</td></tr></table></html>', 'latin1');
+    expect(readHtmlTable(w).rows).toEqual([['نام']]);
+    expect(() => readHtmlTable(new TextEncoder().encode('<html><body>بدون جدول</body></html>'))).toThrow(SpreadsheetError);
   });
 });

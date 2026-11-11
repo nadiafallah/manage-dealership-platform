@@ -1344,3 +1344,28 @@ export const roleMigrationLog = pgTable('role_migration_log', {
   after: jsonb('after').notNull(),
   createdAt: ts('created_at').notNull().defaultNow(),
 });
+
+/**
+ * «اعلام قیمت» (spec section 7): the parts clerk announces the sale price of one
+ * line; the accident expert confirms or gives another instruction. Never blocks.
+ */
+export const partPriceNotices = pgTable('part_price_notices', {
+  id: uuid('id').primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  caseId: uuid('case_id').notNull().references(() => cases.id),
+  partRequestId: uuid('part_request_id').notNull().references(() => partRequests.id),
+  saleUnitRial: bigint('sale_unit_rial', { mode: 'number' }).notNull(),
+  note: text('note'),
+  announcedBy: uuid('announced_by').notNull().references(() => users.id),
+  announcedAt: ts('announced_at').notNull().defaultNow(),
+  // null = open | approved | instruction
+  response: text('response'),
+  instruction: text('instruction'),
+  respondedBy: uuid('responded_by').references(() => users.id),
+  respondedAt: ts('responded_at'),
+  isTest: boolean('is_test').notNull().default(false),
+  version: integer('version').notNull().default(1),
+}, (t) => [
+  index('part_price_notices_case_idx').on(t.tenantId, t.caseId),
+  index('part_price_notices_part_idx').on(t.partRequestId),
+]);

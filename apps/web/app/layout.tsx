@@ -10,6 +10,8 @@ import '@fontsource/vazirmatn/800.css';
 import './globals.css';
 // HEDAX Signature visual layer; every rule is scoped to html[data-ui="signature"].
 import './signature.css';
+// New design language (spec section 12); components are prefixed m-.
+import './manage-ui.css';
 import { ToastProvider } from '@/lib/toast';
 import {InstallProvider} from '@/components/InstallApp';
 import {NetworkStatus} from '@/components/NetworkStatus';

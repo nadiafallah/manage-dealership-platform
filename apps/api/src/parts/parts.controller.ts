@@ -7,7 +7,11 @@ import {
   type PartsWorkbenchAction,
   importPartsSchema,
   partActionSchema,
+  partFlowActionSchema,
   partsFromAssessmentSchema,
+  priceNoticeResponseSchema,
+  type PartFlowActionInput,
+  type PriceNoticeResponseInput,
   type CreatePartInput,
   type ImportPartsInput,
   type PartActionInput,
@@ -79,5 +83,32 @@ export class PartsController {
   @RequirePermissions('part.manage')
   act(@CurrentActor() actor: Actor, @IdParam() id: string, @Body(new ZodPipe(partActionSchema)) body: PartActionInput) {
     return this.parts.act(actor, id, body);
+  }
+
+  /** Unified parts list (spec section 7): the only action valid in the line's current state. */
+  @Post('parts/:id/flow')
+  @RequirePermissions('part.manage')
+  flow(@CurrentActor() actor: Actor, @IdParam() id: string, @Body(new ZodPipe(partFlowActionSchema)) body: PartFlowActionInput) {
+    return this.parts.flow(actor, id, body);
+  }
+
+  /** The parts clerk's desk: vehicles with undecided, in-progress or ready lines (spec section 3). */
+  @Get('parts/desk')
+  @RequirePermissions('part.manage')
+  desk(@CurrentActor() actor: Actor) {
+    return this.parts.desk(actor);
+  }
+
+  /** Open price announcements for the accident expert's desk. */
+  @Get('price-notices')
+  @RequirePermissions('case.read')
+  priceNotices(@CurrentActor() actor: Actor, @Query('caseId') caseId?: string) {
+    return this.parts.openNotices(actor, caseId && /^[0-9a-f-]{36}$/i.test(caseId) ? caseId : undefined);
+  }
+
+  @Post('price-notices/:id/respond')
+  @RequirePermissions('case.update')
+  respondPriceNotice(@CurrentActor() actor: Actor, @IdParam() id: string, @Body(new ZodPipe(priceNoticeResponseSchema)) body: PriceNoticeResponseInput) {
+    return this.parts.respondPriceNotice(actor, id, body);
   }
 }

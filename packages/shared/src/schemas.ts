@@ -448,6 +448,33 @@ export const partActionSchema = z
   .refine((v) => v.action !== 'cancel' || !!v.note, { message: 'برای لغو ذکر دلیل الزامی است', path: ['note'] });
 export type PartActionInput = z.infer<typeof partActionSchema>;
 
+// ---- unified parts list (spec section 7): one endpoint, one action per state
+const reason = z.string().trim().min(3, 'علت را بنویسید').max(500);
+const flowBase = { expectedVersion: z.number().int().min(1) };
+export const partFlowActionSchema = z.discriminatedUnion('action', [
+  z.object({ ...flowBase, action: z.literal('reserve'), snapshotId: uuid, fullStockCode: z.string().trim().min(1).max(32), locationAddress: z.string().max(120).default(''), saleUnitRial: rial.optional() }),
+  // The Emdad Vijeh request number is mandatory (per vehicle: VIN + admission number).
+  z.object({ ...flowBase, action: z.literal('emdad'), requestNo: z.string().trim().min(1, 'شمارهٔ درخواست امداد ویژه را وارد کنید').max(64), requestedAt: optionalIsoDate, requestedCode: optionalText(32) }),
+  z.object({ ...flowBase, action: z.literal('market'), supplier: z.string().trim().min(1, 'نام فروشنده را وارد کنید').max(120), purchaseUnitRial: rial, saleUnitRial: rial, etaAt: optionalIsoDate }),
+  z.object({ ...flowBase, action: z.literal('receive'), receiptDocNo: optionalText(64) }),
+  z.object({ ...flowBase, action: z.literal('hand_over'), recipientName: z.string().trim().min(1, 'نام تحویل‌گیرنده را وارد کنید').max(120), taskId: uuid.nullish(), departmentId: uuid.nullish(), saleUnitRial: rial.optional() }),
+  z.object({ ...flowBase, action: z.literal('cancel'), reason }),
+  z.object({ ...flowBase, action: z.literal('return'), reason }),
+  z.object({ ...flowBase, action: z.literal('set_price'), saleUnitRial: rial }),
+  z.object({ ...flowBase, action: z.literal('announce_price'), saleUnitRial: rial, note: optionalText(300) }),
+]);
+export type PartFlowActionInput = z.infer<typeof partFlowActionSchema>;
+
+/** The accident expert answers a price announcement: confirm, or give another instruction. Never blocks. */
+export const priceNoticeResponseSchema = z
+  .object({
+    expectedVersion: z.number().int().min(1),
+    response: z.enum(['approved', 'instruction']),
+    instruction: optionalText(300),
+  })
+  .refine((v) => v.response !== 'instruction' || !!v.instruction, { message: 'دستور را بنویسید (مثلاً از فروشگاه فلان بخرید یا امداد ویژه بزنید)', path: ['instruction'] });
+export type PriceNoticeResponseInput = z.infer<typeof priceNoticeResponseSchema>;
+
 export const financeSharesSchema = z.object({
   // Payer split of the estimate; null = not decided yet.
   customerShareRial: rial.nullable(),

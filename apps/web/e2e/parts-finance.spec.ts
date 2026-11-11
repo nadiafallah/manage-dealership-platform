@@ -42,36 +42,38 @@ test('expert records customer price approval; parts orders and hands over', asyn
   await expect(page.getByText('پاسخ و مرجع تأیید ثبت شد.')).toBeVisible();
   expect(quote.id).toBeTruthy();
 
-  // Parts clerk: order the approved mirror, receive it, hand it over.
+  // Parts clerk, on the single parts list: market purchase, receipt, handover (spec section 7).
   await openCase3(page, 'parts');
   const mirror = page.getByTestId('part').filter({ hasText: 'آینه بغل چپ' });
-  await expect(mirror).toContainText('نیاز ثبت شد');
-  await mirror.getByRole('button', { name: 'سفارش قطعه' }).click();
-  await dialog.getByLabel('تأمین‌کننده', { exact: true }).fill('فروشگاه آزمون');
-  await expect(dialog.getByLabel('قیمت واحد خرید (ریال) *')).toHaveValue('14000000');
-  await dialog.getByRole('button', { name: 'ثبت', exact: true }).click();
-  await expect(mirror).toContainText('سفارش داده شد');
+  await expect(mirror).toContainText('تعیین تکلیف نشده');
+  await mirror.getByRole('button', { name: 'تعیین تکلیف' }).click();
+  await mirror.getByRole('button', { name: 'خرید بازار', exact: true }).click();
+  await mirror.getByLabel('فروشنده *').fill('فروشگاه آزمون');
+  await mirror.getByLabel('قیمت خرید واحد (ریال) *').fill('14000000');
+  await mirror.getByLabel('قیمت فروش واحد (ریال) *').fill('14000000');
+  await mirror.getByRole('button', { name: 'خرید بازار', exact: true }).last().click();
+  await expect(mirror).toContainText('خرید بازار · در راه');
 
-  await mirror.getByRole('button', { name: 'رسید و کنترل قطعه' }).click();
-  await dialog.getByLabel('شماره رسید انبار').fill('RCV-E2E-1');
-  await dialog.getByRole('button', { name: 'ثبت', exact: true }).click();
-  await expect(mirror).toContainText('رسید و کنترل شد');
+  await mirror.getByRole('button', { name: 'ثبت رسید' }).first().click();
+  await mirror.getByLabel('شمارهٔ رسید (اختیاری)').fill('RCV-E2E-1');
+  await mirror.getByRole('button', { name: 'ثبت رسید' }).last().click();
+  await expect(mirror).toContainText('آمادهٔ تحویل');
 
-  await mirror.getByRole('button', { name: 'تحویل به واحد تعمیر' }).click();
-  await dialog.getByLabel('واحد تعمیر').selectOption({ label: 'مونتاژ و دمونتاژ' });
-  await dialog.getByLabel('تحویل‌گیرنده *').fill('تکنسین آزمون');
-  await dialog.getByRole('button', { name: 'ثبت', exact: true }).click();
-  await expect(mirror).toContainText('تحویل واحد تعمیر');
-  await expect(mirror).toContainText('تکنسین آزمون (مونتاژ و دمونتاژ)');
+  await mirror.getByRole('button', { name: 'تحویل به واحد تعمیر' }).first().click();
+  await mirror.getByLabel('تحویل‌گیرنده *').fill('تکنسین آزمون');
+  await mirror.getByRole('button', { name: 'تحویل به واحد تعمیر' }).last().click();
+  await expect(mirror).toContainText('تحویل‌شده به جایگاه');
+  await expect(mirror).toContainText('تکنسین آزمون');
 
-  // Excel import: preview first, then import all rows of the sample.
+  // Excel import by the expert: preview first, duplicates set aside, then import.
   await openCase3(page,'expert');
-  await page.getByTestId('parts-panel').getByRole('button', { name: 'ورود از اکسل' }).click();
-  await dialog.getByLabel('فایل اکسل (.xlsx)').setInputFiles('public/samples/parts-import-sample.xlsx');
-  await expect(dialog.getByTestId('import-preview')).toContainText('۴ ردیف آماده ورود');
-  await dialog.getByRole('button', { name: 'ورود ۴ ردیف' }).click();
-  await expect(page.getByTestId('part')).toHaveCount(5);
-  await expect(page.getByTestId('parts-panel')).toContainText('آرم صندوق');
+  const ledger = page.getByTestId('parts-ledger');
+  await ledger.getByRole('button', { name: 'ورود از اکسل' }).click();
+  await ledger.getByLabel('فایل اکسل (.xlsx)').setInputFiles('public/samples/parts-import-sample.xlsx');
+  await expect(ledger.getByTestId('import-preview')).toContainText('۴ قلم تازه');
+  await ledger.getByRole('button', { name: 'تأیید و ورود' }).click();
+  await expect(ledger.getByTestId('part')).toHaveCount(5);
+  await expect(ledger).toContainText('آرم صندوق');
 
   // History (not visible to the parts clerk) records every step with its actor.
   await openCase3(page, 'manager');

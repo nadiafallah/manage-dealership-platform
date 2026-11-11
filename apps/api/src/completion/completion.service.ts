@@ -24,6 +24,7 @@ import { newId } from '../common/ids';
 import { DATABASE, type DatabaseHandle, type DbOrTx } from '../db/database';
 import { assessments, blockers, cases, departments, partRequests, qcInspections, tasks, users } from '../db/schema';
 import { FinanceService } from '../finance/finance.service';
+import { StockService } from '../daily-reports/stock.service';
 import { PartsService } from '../parts/parts.service';
 
 type CaseRow = typeof cases.$inferSelect;
@@ -63,6 +64,7 @@ export class CompletionService {
     private readonly cases: CasesService,
     private readonly parts: PartsService,
     private readonly finance: FinanceService,
+    private readonly stock: StockService,
   ) {}
 
   private get db() {
@@ -290,6 +292,8 @@ export class CompletionService {
         input.note ?? null,
         at,
       );
+      // «پایان کار»: the parts of this case stop lowering the usable stock (spec section 7).
+      await this.stock.finishCase(tx, actor, caseId);
     });
     return this.get(actor, caseId);
   }

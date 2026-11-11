@@ -39,6 +39,7 @@ export async function purgeTestTenants(db: Database): Promise<number> {
       await tx.execute(sql`delete from financial_approvals where tenant_id = ${id}`);
       await tx.execute(sql`delete from case_finance where tenant_id = ${id}`);
       await tx.execute(sql`update blockers set part_request_id = null where tenant_id = ${id}`);
+      await tx.execute(sql`delete from part_price_notices where tenant_id = ${id}`);
       await tx.execute(sql`delete from part_quotes where tenant_id = ${id}`);
       await tx.execute(sql`delete from part_requests where tenant_id = ${id}`);
       await tx.execute(sql`delete from assessment_items where tenant_id = ${id}`);
