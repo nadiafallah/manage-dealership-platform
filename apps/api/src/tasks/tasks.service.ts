@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { addWorkingMinutes,workingDayMinutes,nextWorkingInstant } from '@manage/shared';
 import { calendarAt } from '../workshop/work-calendar';
-import type { CreateTaskInput, Task, TaskActionInput, TaskStatus, UpdateTaskInput } from '@manage/shared';
+import { stepDependencies, type CreateTaskInput, type RepairPlanStepsInput, type Task, type TaskActionInput, type TaskStatus, type UpdateTaskInput } from '@manage/shared';
 import { AuditService, diff } from '../audit/audit.service';
 import type { Actor } from '../auth/auth.types';
 import { assertNotFuture, CasesService, MINUTE_TOLERANCE_MS } from '../cases/cases.service';
@@ -10,7 +10,7 @@ import { badRequest, forbidden, notFound, versionConflict } from '../common/erro
 import { requireSupportReason } from '../auth/support-reason';
 import { newId } from '../common/ids';
 import { DATABASE, type DatabaseHandle, type DbOrTx } from '../db/database';
-import { departments, externalWork, taskDependencies, tasks, workshopStations, users } from '../db/schema';
+import { departments, externalWork, taskDependencies, tasks, technicianWages, workshopStations, users } from '../db/schema';
 
 type TaskRow = typeof tasks.$inferSelect;
 
@@ -96,6 +96,56 @@ export class TasksService {
       snapshot: { version: 1, row: { ...row!, dependsOn } },
     });
     return id;
+  }
+
+  /**
+   * Repair plan (spec §8): the expert lists the steps in order; each step waits for the previous one unless
+   * it is marked «هم‌زمان با قبلی». The first steps wait for the case's open tail tasks (or afterTaskIds).
+   * Wages are written in the same transaction, so a plan is saved whole or not at all.
+   */
+  async addPlanSteps(actor: Actor, caseId: string, input: RepairPlanStepsInput): Promise<Task[]> {
+    const tenantId = actor.user.tenantId;
+    if (input.steps.some((s) => s.wageRial !== undefined) && !actor.user.permissions.has('wage.manage')) throw forbidden();
+    const ids: string[] = [];
+    await this.db.transaction(async (tx) => {
+      await this.cases.loadForWrite(tx, tenantId, caseId);
+      const before = input.afterTaskIds ? [...new Set(input.afterTaskIds)] : await this.openTail(tx, tenantId, caseId);
+      await this.assertSameCase(tx, tenantId, caseId, before);
+      const planned: string[] = [];
+      for (const [i, step] of input.steps.entries()) {
+        const deps = stepDependencies(input.steps.slice(0, i + 1), [...planned, ''], before)[i]!;
+        const id = await this.createIn(tx, actor, caseId, {
+          departmentId: step.departmentId,
+          stationId: step.stationId ?? null,
+          assignedUserId: step.assignedUserId ?? null,
+          durationDays: step.days,
+          title: step.title,
+          dependsOn: deps,
+          weight: 1,
+        });
+        planned.push(id);
+        if (step.wageRial !== undefined) {
+          const now = new Date();
+          const [row] = await tx
+            .insert(technicianWages)
+            .values({ taskId: id, tenantId, caseId, amountRial: step.wageRial, reason: null, setBy: actor.user.id, setAt: now, isTest: actor.user.isTestTenant })
+            .returning();
+          await this.audit.record(tx, actor, { entityType: 'task_wage', entityId: id, caseId, action: 'wage.set', occurredAt: now, after: { amountRial: step.wageRial }, snapshot: { version: 1, row: row! } });
+        }
+      }
+      ids.push(...planned);
+    });
+    return Promise.all(ids.map((id) => this.get(actor, caseId, id)));
+  }
+
+  /** Unfinished tasks of a case that nothing else waits for: where a new plan step naturally continues. */
+  private async openTail(tx: DbOrTx, tenantId: string, caseId: string): Promise<string[]> {
+    const rows = await tx.select({ id: tasks.id, status: tasks.status }).from(tasks).where(and(eq(tasks.caseId, caseId), eq(tasks.tenantId, tenantId)));
+    const open = rows.filter((r) => !FINISHED.includes(r.status as TaskStatus) ).map((r) => r.id);
+    if (!open.length) return [];
+    const deps = await tx.select().from(taskDependencies).where(inArray(taskDependencies.dependsOnTaskId, open));
+    const waitedOn = new Set(deps.filter((d) => open.includes(d.taskId)).map((d) => d.dependsOnTaskId));
+    return open.filter((id) => !waitedOn.has(id));
   }
 
   async update(actor: Actor, taskId: string, input: UpdateTaskInput): Promise<Task> {

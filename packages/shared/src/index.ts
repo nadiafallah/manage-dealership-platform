@@ -20,3 +20,4 @@ export * from './manage-advisor';
 export * from './people';
 export * from './alerts';
 export * from './part-flow';
+export * from './repair-plan';

@@ -158,6 +158,8 @@ describe('reminders between desks', () => {
     expect(card).toMatchObject({ urgency: 'urgent', source: 'technician_problem', case: { id: caseId } });
     expect(card.body).toContain('قطعه ندارم');
     expect((await coordB.get('/reminders/inbox')).body.some((r: { reminderId: string }) => r.reminderId === res.body.id)).toBe(false);
+    // Spec section 9: «قطعه ندارم» also reaches the parts clerk.
+    expect((await (await h.login('parts')).get('/reminders/inbox')).body.some((r: { reminderId: string }) => r.reminderId === res.body.id)).toBe(true);
     expect((await techB.post(`/workshop/my-tasks/${taskId}/problem`, { problem: 'part_late' })).status).toBe(403);
     expect((await tech.post(`/workshop/my-tasks/${taskId}/problem`, { problem: 'unknown' })).status).toBe(400);
     // A technician attaches only a case of their own job.

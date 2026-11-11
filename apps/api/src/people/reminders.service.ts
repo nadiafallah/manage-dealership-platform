@@ -186,8 +186,12 @@ export class RemindersService implements OnApplicationBootstrap, OnApplicationSh
       .from(users)
       .where(and(eq(users.tenantId, tenantId), eq(users.isActive, true)));
     let recipients = row.responsible && staff.some((u) => u.id === row.responsible) ? [row.responsible] : [];
-    // No responsible on the case: every active accident coordinator of the dealership.
+    // No responsible on the case: every active accident expert of the dealership.
     if (!recipients.length) recipients = staff.filter((u) => normalizeRoles(u.roles).some((r) => COORDINATOR_ROLES.includes(r))).map((u) => u.id);
+    // Spec section 9: «قطعه ندارم» (and a late part) also reaches the parts clerks.
+    if (problem === 'no_part' || problem === 'part_late') {
+      recipients = [...new Set([...recipients, ...staff.filter((u) => normalizeRoles(u.roles).includes('parts_clerk')).map((u) => u.id)])];
+    }
     return this.create(actor, {
       recipients: recipients.filter((id) => id !== actor.user.id),
       body: `${TECHNICIAN_PROBLEM_LABELS[problem]} — ${row.t.title || row.department}`,

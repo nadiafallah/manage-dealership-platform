@@ -25,6 +25,7 @@ import { TaskStatusChip } from './Chips';
 import { Dialog } from './Dialog';
 import { JalaliInput } from './JalaliInput';
 import { AppIcon } from './AppIcon';
+import { RepairPlanEditor } from './RepairPlanEditor';
 
 const ACTION_LABELS: Record<TaskAction, string> = {
   start: 'شروع',
@@ -43,6 +44,7 @@ export function TasksPanel({ kase, onChange }: { kase: CaseDetail; onChange: () 
   const { can } = useAuth();
   const toast = useToast();
   const [adding, setAdding] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const [advisorOpen, setAdvisorOpen] = useState(false);
   const [advisorPicked, setAdvisorPicked] = useState<PlanSuggestion | null>(null);
   const { data: managePlans, error: managePlanError } = useSWR<PlanSuggestion[]>(advisorOpen && can('task.manage') ? `/workshop/plan-suggestion?caseId=${kase.id}` : null, fetcher);
@@ -141,6 +143,7 @@ export function TasksPanel({ kase, onChange }: { kase: CaseDetail; onChange: () 
         </h2>
         {manage && editable && <div className="row">
           <button className="btn btn-sm" type="button" aria-expanded={advisorOpen} onClick={() => setAdvisorOpen(v => !v)}><AppIcon name="sparkles" /> دستیار منیج</button>
+          <button className="btn btn-sm btn-primary" type="button" aria-expanded={planning} onClick={() => setPlanning(v => !v)}>{planning ? 'بستن مسیر' : 'ساخت مسیر تعمیر'}</button>
           <button className="btn btn-sm" type="button" onClick={() => { setAdvisorPicked(null); setAdding(!adding); }}>
             {adding ? 'بستن فرم' : 'افزودن فعالیت'}
           </button>
@@ -162,16 +165,17 @@ export function TasksPanel({ kase, onChange }: { kase: CaseDetail; onChange: () 
         </div>; })}
         <p className="small muted">استفاده از پیشنهاد فقط فرم فعالیت را تکمیل می‌کند؛ ثبت، بررسی پیش‌نیازها و تعیین مسئول با تأیید کارشناس است.</p>
       </div>}
+      {planning && manage && editable && <RepairPlanEditor kase={kase} onDone={() => { setPlanning(false); onChange(); }} />}
       {adding && <AddTask key={advisorPicked?.departmentId ?? 'manual'} kase={kase} suggested={advisorPicked ?? undefined} onDone={() => { setAdding(false); setAdvisorPicked(null); onChange(); }} />}
       {editing && <AddTask key={editing.id} kase={kase} initial={editing} onDone={() => {setEditing(null);onChange();}} />}
       <ol className="repair-route" aria-label="مسیر برنامه‌ریزی‌شده تعمیر">
         {kase.tasks.map(t=><li key={t.id} data-status={t.status}><strong>{t.stationCode || t.department.name}</strong><span>{t.dependsOn.length ? `پس از تأیید ${t.dependsOn.map(id=>byId.get(id)?.stationCode||byId.get(id)?.department.name).join('، ')}` : 'مستقل / قابل اجرای هم‌زمان'}</span></li>)}
       </ol>
 
-      {kase.tasks.length === 0 && !adding && (
+      {kase.tasks.length === 0 && !adding && !planning && (
         <div className="panel-body muted small">
           هنوز فعالیتی تعریف نشده است.
-          {manage && editable ? ' واحدهای درگیر (صافکاری، نقاشی و…) را با «افزودن فعالیت» اضافه کنید.' : ''}
+          {manage && editable ? ' مسیر را با «ساخت مسیر تعمیر» قدم‌به‌قدم بنویسید.' : ''}
         </div>
       )}
 

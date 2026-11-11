@@ -17,7 +17,7 @@ test('coded station, schedule, technician mobile start/end and coordinator hando
  await page.goto('/workshop');await expect(page.getByRole('heading',{name:'برنامه و پیگیری تعمیرات'})).toBeVisible();await expect(page.getByRole('cell',{name:/TEST-MOBILE-01/})).toBeVisible();
  await page.screenshot({path:info.outputPath('coordinator-desktop.png'),fullPage:true});
  await login(page,'technician');await page.setViewportSize({width:390,height:844});await page.goto('/workshop/technician');
- await expect(page.getByRole('heading',{name:'کارهای من',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'شروع کار',exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{level:1,name:/^سلام/})).toBeVisible();await expect(page.getByRole('button',{name:'شروع کار',exact:true})).toBeVisible();
  expect((await page.getByRole('button',{name:'شروع کار',exact:true}).boundingBox())!.height).toBeGreaterThanOrEqual(64);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:info.outputPath('technician-mobile-before.png'),fullPage:true});
