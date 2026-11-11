@@ -49,14 +49,15 @@ export class Client {
   }
 }
 
-export async function createHarness(opts: { withCases?: boolean; config?:Partial<Record<keyof AppConfig,string>> } = {}): Promise<Harness> {
+export async function createHarness(opts: { withCases?: boolean; fleet?: boolean; config?:Partial<Record<keyof AppConfig,string>> } = {}): Promise<Harness> {
   const cfg = loadConfig({ APP_ENV: 'test', DB_DRIVER: 'pglite', PGLITE_DATA_DIR: 'memory://', NODE_ID: 'test', ...opts.config });
   const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
   const app = moduleRef.createNestApplication({ logger: false });
   configureApp(app, cfg);
   await app.init();
   const seeder = app.get(DemoSeedService);
-  await seeder.seed({ password: TEST_PASSWORD, withCases: opts.withCases ?? false });
+  // The ~20-car demo fleet is opt-in in tests: older suites count the five base cases.
+  await seeder.seed({ password: TEST_PASSWORD, withCases: opts.withCases ?? false, fleet: opts.fleet ?? false });
 
   async function login(username: string, tenantCode?: string): Promise<Client> {
     const res = await request(app.getHttpServer())

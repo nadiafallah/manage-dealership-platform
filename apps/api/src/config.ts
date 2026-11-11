@@ -36,6 +36,8 @@ const envSchema = z.object({
   DAILY_REPORT_MAX_BYTES: z.coerce.number().int().min(1_000_000).max(64 * 1024 * 1024).default(32 * 1024 * 1024),
   // Server-side 11:00 reminders; off in tests, which drive the scheduler directly.
   DAILY_SCHEDULER: z.string().default('true').transform((v) => v === 'true'),
+  // Package 8: the demo seeds about twenty synthetic cars; 'false' keeps only the five base cases.
+  DEMO_FLEET: z.string().default('true').transform((v) => v === 'true'),
   LOGIN_RATE_LIMIT: z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().int().positive().optional()),
 });
 

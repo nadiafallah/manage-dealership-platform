@@ -1,5 +1,19 @@
 # Test report
 
+## Rebuild per the approved product spec — packages 0–8 — 2026-11-10/11 — branches `feature/p0-spec-housekeeping` … `feature/p8-quality-delivery`
+
+- **Scope:** [PRODUCT_SPEC_FA.md](PRODUCT_SPEC_FA.md) packages 0–8 (six roles, cost alerts, one parts list with a server-side state machine, usable stock, repair path and technician desk, paper/dark interface, control room and alert table, demo fleet, docs).
+- **Ran locally and green (this environment):**
+  - `packages/shared` unit tests with `node --test`: **52/52**. Includes the part state machine (every allowed and forbidden transition), usable stock with the spec example (5 → reserve → 4 → tomorrow's 5 still 4 → finish → report 4, no double deduction), roles and permissions of the six roles, cost alerts, repair-path dependencies and duration (spec example: 8 days), desk «قدم بعدی» rules, control-room funnel/map/analysis.
+  - Migrations **0000 → 0022 on real PostgreSQL 16**; down scripts of 0020 (six roles, with exact restore of legacy roles, deactivated cashier-only accounts and templates), 0021 and 0022 run and re-applied.
+  - The stock report reader on synthetic files: HTML table with `.xls` name, blank lines before `<html>`, Arabic «ي/ك», `colspan`, entities, unclosed cells, windows-1256.
+  - TypeScript of `apps/api` and `apps/web` against the previous baseline with stubbed third-party types: **no new error** in API code; in web code only stub artefacts (untyped `useSWR<T>`, `ReactNode`, `key` props) that also exist for every untouched file.
+  - `node scripts/check-docs.mjs`: green (175 routes in [API.md](API.md)).
+- **Written but not run here** (they need the installed workspace):
+  - API e2e (Jest + PGlite): new `repair-plan`, `desk`, `control-room`, `demo-fleet`, `part-flow`; updated `people`, `daily-reports`, `parts-finance`, `access`, `qc-delivery`, `reports` and others for the six roles.
+  - Playwright: new `role-journeys.spec.ts` (two-door login without «مالک», expert desk → folder → tabs, parts desk counts, technician at 390px, control room with four numbers/funnel/bottleneck/«تذکر», system admin «گره‌ها» and thresholds; desktop and 390px screenshots of each screen); updated `people`, `workshop`, `workspaces`, `system-admin`, `compact-assessment`, `assessment`, `vehicle-import`, `daily-reports`, `parts-finance`, `screenshots`; `signature-evidence.spec.ts` removed with the Signature theme. Screenshots of a full workshop: `DEMO_FLEET=true pnpm test:e2e role-journeys`.
+- **Could not run in this environment, with the reason:** `pnpm install` (the npm registry answers 403 here), therefore `pnpm lint`, the full `pnpm typecheck`, `pnpm test`, `pnpm build` and `pnpm test:e2e`; GitHub CI (Actions are disabled on the fork and the upstream PRs could not be opened from here); the HawkScan DAST loop (no running app, no `HAWK_API_KEY`). These must be green on the PRs before any merge.
+
 ## Unified staff PIN sign-in — 2026-11-09 — **PR #74**
 
 - **Changed:**
