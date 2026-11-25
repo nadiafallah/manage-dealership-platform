@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
-import { formatJalaliDateInput, formatTimeInput, type DailyImport, type Paged, type SpecialAidDossier, type SpecialAidDossierRow, type SpecialAidSupplyRow, type SpecialAidTodayEntry } from '@manage/shared';
+import { dossierQueue, formatJalaliDateInput, formatTimeInput, SPECIAL_AID_QUEUES, type DailyImport, type Paged, type SpecialAidDossier, type SpecialAidDossierRow, type SpecialAidSupplyRow, type SpecialAidTodayEntry } from '@manage/shared';
 import { notifications, specialAidContacts, specialAidDossiers, specialAidItems, stockReservations, users } from '../src/db/schema';
 import { buildEmdadXml, buildStockXlsx, emdadRow, type EmdadRow, type StockRow } from '../src/daily-reports/fixtures';
 import { newId } from '../src/common/ids';
@@ -273,4 +273,33 @@ it('report center: three ISACO reports, last import, editable guide only with re
   expect(saved.status).toBe(200);
   expect(saved.body[2]).toMatchObject({ guide: body.guide, pastDays: 20, futureDays: 40 });
   expect((await admin.put('/report-center', { ...body, futureDays: 400 })).status).toBe(400);
+});
+
+it('reconstruction: one queue per vehicle, «خاموش» counts as not reached, inspection file (scenario 2026-11-25)', async () => {
+  const d = await detail(operator, (await dossierOf(operator)).id);
+  const expected = dossierQueue(d.items.map((i) => ({ id: i.id, state: i.state, receivedAt: i.receivedAt, arrivalObservedAt: i.arrivalObservedAt, informedAt: i.informedAt, groupId: i.groupId, officialCancelled: i.officialCategory === 'cancelled' })), d.contacts);
+  const member: string[] = [];
+  for (const view of SPECIAL_AID_QUEUES) {
+    const ids = ((await operator.post('/special-aid/dossiers/search', { view, pageSize: 100 })).body as Paged<SpecialAidDossierRow>).items.map((x) => x.id);
+    if (ids.includes(d.id)) member.push(view);
+  }
+  expect(member).toEqual(expected ? [expected] : []);
+  const r = await operator.post(`/special-aid/dossiers/${d.id}/contacts`, { outcome: 'switched_off', itemIds: [d.items[0]!.id], expectedVersion: d.version });
+  expect(r.status).toBe(201);
+  expect((r.body as SpecialAidDossier).contacts[0]!.outcome).toBe('switched_off');
+  expect((r.body as SpecialAidDossier).failedAttemptDays).toBeGreaterThanOrEqual(1);
+  const file = await operator.get(`/special-aid/dossiers/${d.id}/inspection`).buffer(true).parse((res, cb) => {
+    const b: Buffer[] = [];
+    res.on('data', (c: Buffer) => b.push(c));
+    res.on('end', () => cb(null, Buffer.concat(b)));
+  });
+  expect(file.status).toBe(200);
+  expect(String(file.headers['content-type'])).toContain('spreadsheetml');
+  expect((file.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+  const item = (r.body as SpecialAidDossier).items.find((i) => i.state !== 'installed')!;
+  const saved = await operator.post(`/special-aid/items/${item.id}/non-consumption`, { reason: 'technician_diagnosis', requestingStation: 'مکانیکی 99', expectedVersion: item.version });
+  expect(saved.status).toBe(201);
+  expect((await detail(operator, d.id)).items.find((i) => i.id === item.id)).toMatchObject({ nonConsumptionReason: 'technician_diagnosis', requestingStation: 'مکانیکی 99' });
+  const guest = await h.loginAs('sa-recon-guest', ['guest']);
+  expect((await guest.get(`/special-aid/dossiers/${d.id}/inspection`)).status).toBe(403);
 });

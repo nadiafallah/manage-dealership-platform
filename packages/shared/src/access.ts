@@ -22,7 +22,7 @@ export const PERMISSION_LABELS: Record<Permission,string> = {
  'special_aid.read':'مشاهده پرونده‌های امداد ویژه','special_aid.operate':'تماس با مشتری و پیگیری قطعات امداد ویژه','special_aid.supply':'پیگیری تأمین امداد ویژه و خروجی برای شرکت',
  'special_aid.release':'آزاد کردن رزرو قطعهٔ امداد ویژه','special_aid.report':'داشبورد مدیریتی امداد ویژه','special_aid.warn':'بازخورد فنی و تذکر رسمی امداد ویژه',
  'report_center.manage':'مدیریت مرکز گزارش‌های کسب‌وکار و راهنماها',
- 'integration.manage':'تنظیم و کنترل منیج پالس (اتصال کسب‌وکار)','reception.read':'مشاهدهٔ پذیرش‌ها و پروندهٔ پذیرش','reception.external_work':'ثبت کار خارج از نمایندگی و یادداشت پذیرش',
+ 'integration.manage':'تنظیم و کنترل منیج پالس (اتصال کسب‌وکار)','reception.read':'مشاهدهٔ پذیرش‌ها و پروندهٔ پذیرش','reception.external_work':'ثبت کار خارج از نمایندگی و یادداشت پذیرش','reception.night_list':'ثبت علت ماندن و جایگاه خودروها در لیست شب','reception.night_list_send':'تأیید و ارسال لیست شب',
 };
 export const PERMISSION_GROUPS: {title:string;permissions:Permission[]}[] = [
  {title:'برنامه تعمیر و تأیید خرید',permissions:['workshop.read','workshop.manage','calendar.manage','task.execute','part.quote','part.price_authorize']},
@@ -31,7 +31,7 @@ export const PERMISSION_GROUPS: {title:string;permissions:Permission[]}[] = [
  {title:'قطعات',permissions:['part.request','part.manage','reference.parts.read','reference.parts.manage']},
  {title:'گزارش‌های روزانه، موجودی و امداد ویژه',permissions:['daily_reports.upload','daily_reports.apply','daily_reports.settings','stock.read','stock.reserve','stock.release','stock.issue','emdad.read','emdad.manage']},
  {title:'پیگیری امداد ویژه',permissions:['special_aid.read','special_aid.operate','special_aid.supply','special_aid.release','special_aid.report','special_aid.warn']},
- {title:'پذیرش و ترخیص (منیج پالس)',permissions:['reception.read','reception.external_work','integration.manage']},
+ {title:'پذیرش و ترخیص (منیج پالس)',permissions:['reception.read','reception.external_work','reception.night_list','reception.night_list_send','integration.manage']},
  {title:'مالی و صندوق',permissions:['finance.propose','finance.approve','finance.payment','finance.close']},
  {title:'کنترل کیفیت و تحویل',permissions:['qc.inspect','case.technical_close','case.deliver','case.release_authorize']},
  {title:'گزارش، اطلاعات پایه و مدیریت',permissions:['dashboard.read','report.manager','wage.report','audit.read','reference.customers.read','reference.customers.manage','reference.appointments.read','reference.appointments.manage','report_center.manage','user.manage','settings.manage']},

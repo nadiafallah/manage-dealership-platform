@@ -69,6 +69,7 @@ export function Shell({ children }: { children: ReactNode }) {
       { href: '/reception', label: 'پذیرش‌های امروز', icon: 'calendar', show: receptionActive && can('reception.read'), match: (p) => p === '/reception' },
       { href: '/reception/open', label: 'پذیرش‌های باز', icon: 'folder', show: receptionActive && can('reception.read'), match: (p) => p === '/reception/open' || (/^\/reception\/[^/]+$/.test(p) && p !== '/reception/released') },
       { href: '/reception/released', label: 'ترخیص‌شده‌ها', icon: 'check', show: receptionActive && can('reception.read'), match: (p) => p === '/reception/released' },
+      { href: '/reception/night', label: 'لیست شب', icon: 'clock', show: receptionActive && can('reception.read'), match: (p) => p === '/reception/night' },
     ] },
     { key: 'accident', label: 'مدیریت تصادفات', icon: 'nav-car', items: [
       { href: '/accidents/expert', label: 'خودروهای تصادفی', icon: 'car', show: desks.some((w) => w.key === 'expert') && home !== '/accidents/expert', match: (p) => p === '/accidents/expert' },
@@ -213,7 +214,7 @@ export function backTarget(pathname: string, home: string, canChooseDesk = false
   if (/^\/special-aid\/vehicles\/[^/]+$/.test(pathname)) return { href: '/special-aid/vehicles', label: 'بازگشت به پرونده خودروها' };
   if (pathname.startsWith('/special-aid')) return null;
   // Reception lists carry their own tabs; a reception folder goes back to the open admissions.
-  if (/^\/reception\/(?!open$|released$)[^/]+$/.test(pathname)) return { href: '/reception/open', label: 'بازگشت به پذیرش‌ها' };
+  if (/^\/reception\/(?!open$|released$|night$)[^/]+$/.test(pathname)) return { href: '/reception/open', label: 'بازگشت به پذیرش‌ها' };
   if (pathname.startsWith('/reception')) return null;
   if (/^\/cases\/(?!new$|import$)[^/]+$/.test(pathname)) return null;
   const edit = /^\/cases\/([^/]+)\/edit$/.exec(pathname);

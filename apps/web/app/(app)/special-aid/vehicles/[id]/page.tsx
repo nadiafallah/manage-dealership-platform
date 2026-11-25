@@ -20,7 +20,7 @@ import { AppointmentStateTag, AppointmentsPanel, CardList, CardUpload, FeedbackF
 /** One vehicle: every admission and special-aid part together, filterable; one call covers several parts. */
 export default function SpecialAidDossierPage() {
   const { id } = useParams<{ id: string }>();
-  const { can } = useAuth();
+  const { can, me } = useAuth();
   const toast = useToast();
   const { data: d, error, mutate } = useSWR<SpecialAidDossier>(can('special_aid.read') ? `/special-aid/dossiers/${id}` : null, fetcher);
   const [admission, setAdmission] = useState(''), [state, setState] = useState<SpecialAidItemState | ''>('');
@@ -65,6 +65,7 @@ export default function SpecialAidDossierPage() {
 
       <section className="panel" aria-labelledby="aid-parts"><div className="panel-head"><div><h2 id="aid-parts">قطعه‌های امداد ویژه</h2><p className="muted small">{faNum(items.length)} از {faNum(d.items.length)} قطعه</p></div>
         <div className="row no-print">
+          {!me.roles.every((r) => r === 'guest') && <a className="btn btn-sm" href={`/api/v1/special-aid/dossiers/${d.id}/inspection`} title="قطعه‌ها، تماس‌ها و سابقه برای بازرس">Excel بازرسی</a>}
           <label className="field">پذیرش<select className="input" value={admission} onChange={(e) => setAdmission(e.target.value)}><option value="">همهٔ پذیرش‌ها</option>{d.admissions.map((a) => <option key={a.id} value={a.id}>{toPersianDigits(a.admissionNo)} ({faNum(a.itemCount)})</option>)}</select></label>
           <label className="field">وضعیت<select className="input" value={state} onChange={(e) => setState(e.target.value as SpecialAidItemState | '')}><option value="">همه</option>{SPECIAL_AID_ITEM_STATES.map((s) => <option key={s} value={s}>{SPECIAL_AID_ITEM_STATE_LABELS[s]}</option>)}</select></label>
         </div></div>
@@ -86,9 +87,9 @@ export default function SpecialAidDossierPage() {
               {i.accidentCaseId && <p className="small">این قطعه به <Link href={`/cases/${i.accidentCaseId}#case-parts`}>پروندهٔ تصادفی <bdi>{toPersianDigits(i.accidentCaseNumber ?? '')}</bdi></Link> وصل است؛ رزرو و تحویل در میز قطعات انجام می‌شود.</p>}
               {i.replacesItemId && <p className="small">جایگزین درخواست قبلی: <bdi>{toPersianDigits(d.items.find((x) => x.id === i.replacesItemId)?.emdadNo ?? '')}</bdi> (درخواست قبلی در تاریخچه می‌ماند)</p>}
               {i.replacedByItemId && <p className="small">درخواست تازه با شمارهٔ درست: <bdi>{toPersianDigits(d.items.find((x) => x.id === i.replacedByItemId)?.emdadNo ?? '')}</bdi></p>}
-              {i.nonConsumptionReason && <p className="small">علت مصرف‌نشدن: <b>{NON_CONSUMPTION_LABELS[i.nonConsumptionReason]}</b>{i.nonConsumptionNote && ` — ${i.nonConsumptionNote}`}</p>}
+              {i.nonConsumptionReason && <p className="small">علت مصرف‌نشدن: <b>{NON_CONSUMPTION_LABELS[i.nonConsumptionReason]}</b>{i.requestingStation ? ` · جایگاه درخواست‌دهنده: ${i.requestingStation}` : ''}{i.nonConsumptionNote && ` — ${i.nonConsumptionNote}`}</p>}
               {operate && d.items.length > 1 && <Replacement item={i} items={d.items} busy={busy} onSave={(replacesItemId) => run(`/special-aid/items/${i.id}/replacement`, { replacesItemId, expectedVersion: i.version }, 'پیوند درخواست ثبت شد')} />}
-              {operate && !i.accidentCaseId && i.state !== 'installed' && <NonConsumption item={i} busy={busy} onSave={(reason, note) => run(`/special-aid/items/${i.id}/non-consumption`, { reason, note, expectedVersion: i.version }, 'علت ثبت شد؛ رزرو تغییری نکرد')} />}
+              {operate && !i.accidentCaseId && i.state !== 'installed' && <NonConsumption item={i} busy={busy} onSave={(reason, note, station) => run(`/special-aid/items/${i.id}/non-consumption`, { reason, note, ...(station ? { requestingStation: station } : {}), expectedVersion: i.version }, 'علت ثبت شد؛ رزرو تغییری نکرد')} />}
             </div>
             <div className="aid-item-actions no-print">{i.allowedActions.filter((a) => a !== 'release' ? operate : can('special_aid.release')).map((a) => (
               <button key={a} type="button" className={`btn btn-sm${a === 'release' ? ' btn-ghost' : ''}`} disabled={busy} onClick={() => { if (a === 'release') { setRelease(i); setReleaseReason(''); } else void act(i, a); }}>{SPECIAL_AID_ACTION_LABELS[a]}</button>
@@ -131,15 +132,17 @@ export default function SpecialAidDossierPage() {
   );
 }
 
-function NonConsumption({ item, busy, onSave }: { item: SpecialAidItem; busy: boolean; onSave: (reason: NonConsumptionReason | null, note?: string) => Promise<boolean> }) {
+function NonConsumption({ item, busy, onSave }: { item: SpecialAidItem; busy: boolean; onSave: (reason: NonConsumptionReason | null, note?: string, station?: string) => Promise<boolean> }) {
   const [reason, setReason] = useState<NonConsumptionReason | ''>(item.nonConsumptionReason ?? '');
   const [note, setNote] = useState(item.nonConsumptionNote ?? '');
+  const [station, setStation] = useState(item.requestingStation ?? '');
   return (
     <details className="small no-print"><summary>علت مصرف‌نشدن</summary>
       <div className="row">
         <select className="input" aria-label="علت مصرف‌نشدن" value={reason} onChange={(e) => setReason(e.target.value as NonConsumptionReason | '')}><option value="">ثبت نشده</option>{NON_CONSUMPTION_REASONS.map((r) => <option key={r} value={r}>{NON_CONSUMPTION_LABELS[r]}</option>)}</select>
         <input className="input" aria-label="توضیح" placeholder="توضیح (برای «سایر» الزامی)" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
-        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void onSave(reason || null, note.trim() || undefined)}>ثبت</button>
+        <input className="input" aria-label="جایگاه درخواست‌دهنده" placeholder="جایگاه درخواست‌دهنده (مثلاً مکانیکی ۹۹)" maxLength={60} value={station} onChange={(e) => setStation(e.target.value)} />
+        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void onSave(reason || null, note.trim() || undefined, station.trim() || undefined)}>ثبت</button>
       </div>
       {reason === 'wrong_part_number' && <p className="xs muted">درخواست قبلی در ایساکو ویرایش نمی‌شود؛ کارشناس فنی درخواست تازه ثبت می‌کند و هر دو در تاریخچه می‌مانند.</p>}
     </details>

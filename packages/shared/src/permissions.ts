@@ -59,6 +59,9 @@ export const PERMISSIONS = [
   'integration.manage', // کسب‌وکار connection: credentials, start/stop, test, captcha (owner and system administrator)
   'reception.read', // reception folders read from کسب‌وکار, including the customer's contact details
   'reception.external_work', // work outside the dealership and notes on a reception folder
+  // «لیست شب» of the reconstruction scenario (owner, 2026-11-25).
+  'reception.night_list', // stay reason and stations of each vehicle on the nightly list
+  'reception.night_list_send', // approve and send the nightly list (reception supervisor)
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 

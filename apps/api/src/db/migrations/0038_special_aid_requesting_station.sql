@@ -1,0 +1,1 @@
+ALTER TABLE "special_aid_items" ADD COLUMN "requesting_station" text;

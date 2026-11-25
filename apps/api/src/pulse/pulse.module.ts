@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PulseController, ReceptionController } from './pulse.controller';
+import { NightListService } from './night-list.service';
 import { PulseService } from './pulse.service';
 import { ReceptionService } from './reception.service';
 
@@ -10,6 +11,7 @@ import { ReceptionService } from './reception.service';
  */
 @Module({
   controllers: [PulseController, ReceptionController],
-  providers: [PulseService, ReceptionService],
+  providers: [PulseService, ReceptionService, NightListService],
+  exports: [NightListService],
 })
 export class PulseModule {}

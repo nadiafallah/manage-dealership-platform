@@ -59,7 +59,8 @@ export function allowedItemActions(state: SpecialAidItemState): SpecialAidAction
 }
 
 /** Why a part was not used; kept distinguishable in management reports. */
-export const NON_CONSUMPTION_REASONS = ['wrong_part_number', 'wrong_diagnosis', 'not_required', 'customer_no_show', 'customer_declined', 'waiting_related_parts', 'delivered_mismatch', 'other'] as const;
+// The scenario of 2026-11-25 adds a defective part, a technician's diagnosis, a replacement from stock and a sold vehicle.
+export const NON_CONSUMPTION_REASONS = ['wrong_part_number', 'wrong_diagnosis', 'not_required', 'customer_no_show', 'customer_declined', 'waiting_related_parts', 'delivered_mismatch', 'defective_part', 'technician_diagnosis', 'replaced_from_stock', 'vehicle_transferred', 'other'] as const;
 export type NonConsumptionReason = (typeof NON_CONSUMPTION_REASONS)[number];
 export const NON_CONSUMPTION_LABELS: Record<NonConsumptionReason, string> = {
   wrong_part_number: 'شمارهٔ فنی اشتباه',
@@ -69,12 +70,16 @@ export const NON_CONSUMPTION_LABELS: Record<NonConsumptionReason, string> = {
   customer_declined: 'مشتری انصراف داد',
   waiting_related_parts: 'منتظر قطعات مرتبط',
   delivered_mismatch: 'قطعهٔ رسیده مغایر بود',
+  defective_part: 'قطعهٔ معیوب رسید',
+  technician_diagnosis: 'عیب‌یابی اشتباه تکنسین',
+  replaced_from_stock: 'تعویض از موجودی',
+  vehicle_transferred: 'فروش یا انتقال خودرو',
   other: 'سایر (با توضیح)',
 };
 /** Reasons that point at a technical decision (shown to the service manager as technical issues). */
-export const TECHNICAL_REASONS: readonly NonConsumptionReason[] = ['wrong_part_number', 'wrong_diagnosis', 'not_required', 'delivered_mismatch'];
+export const TECHNICAL_REASONS: readonly NonConsumptionReason[] = ['wrong_part_number', 'wrong_diagnosis', 'not_required', 'delivered_mismatch', 'technician_diagnosis'];
 
-export const CONTACT_OUTCOMES = ['answered', 'no_answer', 'appointment_coordinated', 'declined', 'promised_visit'] as const;
+export const CONTACT_OUTCOMES = ['answered', 'no_answer', 'appointment_coordinated', 'declined', 'promised_visit', 'switched_off', 'wrong_number'] as const;
 export type ContactOutcome = (typeof CONTACT_OUTCOMES)[number];
 export const CONTACT_OUTCOME_LABELS: Record<ContactOutcome, string> = {
   answered: 'پاسخ داد',
@@ -82,7 +87,15 @@ export const CONTACT_OUTCOME_LABELS: Record<ContactOutcome, string> = {
   appointment_coordinated: 'نوبت هماهنگ شد',
   declined: 'مشتری انصراف داد',
   promised_visit: 'قول مراجعه داد',
+  switched_off: 'خاموش بود',
+  wrong_number: 'شماره اشتباه است',
 };
+/**
+ * The customer was not reached (scenario 2026-11-25 adds «خاموش» and «شماره اشتباه»): these count
+ * exactly like «پاسخ نداد» for the retry on another day and the escalation after failed days.
+ */
+export const UNREACHED_OUTCOMES: readonly ContactOutcome[] = ['no_answer', 'switched_off', 'wrong_number'];
+export const isUnreached = (o: ContactOutcome | string) => (UNREACHED_OUTCOMES as readonly string[]).includes(o);
 
 /** Follow-up rules (owner, 2026-11-22). Calendar days on the Tehran calendar. */
 export const SPECIAL_AID_RULES = {
@@ -191,8 +204,8 @@ const isOpen = (i: AidItemFacts) => isArrived(i.state) && !SPECIAL_AID_FINAL_STA
 /** Distinct Tehran days with a no-answer attempt since the latest reached contact. */
 export function failedAttemptDays(contacts: readonly AidContactFacts[]): number {
   const sorted = [...contacts].sort((a, b) => a.at.localeCompare(b.at));
-  const lastReached = sorted.reduce((acc, c, i) => (c.outcome !== 'no_answer' ? i : acc), -1);
-  return new Set(sorted.slice(lastReached + 1).filter((c) => c.outcome === 'no_answer').map((c) => tehranDay(c.at))).size;
+  const lastReached = sorted.reduce((acc, c, i) => (!isUnreached(c.outcome) ? i : acc), -1);
+  return new Set(sorted.slice(lastReached + 1).filter((c) => isUnreached(c.outcome)).map((c) => tehranDay(c.at))).size;
 }
 
 /**
@@ -252,8 +265,8 @@ export function dossierTasks(d: AidDossierFacts, now: Date): SpecialAidTask[] {
     const first = uninformed.map((i) => arrivalOf(i).at ?? nowIso).sort()[0]!;
     const due = endOfNextWorkingDay(first, d.isWorkingDay).getTime();
     // After a no-answer today the retry belongs to another day (attempts must be on separate days).
-    if (!(last?.outcome === 'no_answer' && tehranDay(last.at) === today)) {
-      if (last?.outcome === 'no_answer') add('no_answer_retry', tehranDayStart(last.at, 1), uninformed.map((i) => i.id), true);
+    if (!(last && isUnreached(last.outcome) && tehranDay(last.at) === today)) {
+      if (last && isUnreached(last.outcome)) add('no_answer_retry', tehranDayStart(last.at, 1), uninformed.map((i) => i.id), true);
       else add('inform_arrival', new Date(due), uninformed.map((i) => i.id), true);
     }
   }
@@ -268,7 +281,7 @@ export function dossierTasks(d: AidDossierFacts, now: Date): SpecialAidTask[] {
   // 6. Informed parts still waiting: a call every ten days; a no-answer is retried the next day.
   const informed = open.filter((i) => i.informedAt && ['arrived', 'reserved', 'not_installed'].includes(i.state));
   if (informed.length && !uninformed.length && last) {
-    if (last.outcome === 'no_answer') {
+    if (isUnreached(last.outcome)) {
       if (tehranDay(last.at) < today) add('no_answer_retry', tehranDayStart(last.at, 1), informed.map((i) => i.id));
     } else {
       const due = tehranDayStart(last.at, SPECIAL_AID_RULES.recurringContactDays);
@@ -310,6 +323,8 @@ export type ItemActionInput = z.infer<typeof itemActionSchema>;
 export const nonConsumptionSchema = z.object({
   reason: z.enum(NON_CONSUMPTION_REASONS).nullable(),
   note: z.string().trim().max(500).optional(),
+  /** Code of the station that asked for the part (scenario 2026-11-25), e.g. «مکانیکی 99». */
+  requestingStation: z.string().trim().max(60).optional(),
   expectedVersion: z.number().int().min(1),
 }).refine((v) => v.reason !== 'other' || (v.note?.length ?? 0) >= 3, { message: 'برای «سایر» توضیح لازم است', path: ['note'] });
 export type NonConsumptionInput = z.infer<typeof nonConsumptionSchema>;
@@ -320,9 +335,37 @@ export const groupSchema = z.object({
 });
 export const groupDecisionSchema = z.object({ decision: z.enum(['wait', 'partial']), expectedVersion: z.number().int().min(1) });
 
+/** The four work queues of the scenario (owner 2026-11-25), as views of «پرونده خودروها». */
+export const SPECIAL_AID_QUEUES = ['awaiting_supply', 'to_invite', 'appointed', 'settled'] as const;
+export type SpecialAidQueue = (typeof SPECIAL_AID_QUEUES)[number];
+export const SPECIAL_AID_QUEUE_LABELS: Record<SpecialAidQueue, string> = {
+  awaiting_supply: 'در انتظار تأمین',
+  to_invite: 'آمادهٔ دعوت',
+  appointed: 'نوبت‌داده‌شده',
+  settled: 'تعیین تکلیف‌شده',
+};
+/**
+ * Queue of one vehicle. Open arrived parts decide between «آمادهٔ دعوت» and «نوبت‌داده‌شده» by the
+ * latest contact since the earliest open arrival («نوبت هماهنگ شد» or «قول مراجعه»). Without open arrived
+ * parts, a part still being supplied means «در انتظار تأمین»; every part installed or released is
+ * «تعیین تکلیف‌شده». Cancelled official requests are left out; a vehicle without parts has no queue.
+ */
+export function dossierQueue(items: readonly AidItemFacts[], contacts: readonly Pick<AidContactFacts, 'at' | 'outcome'>[]): SpecialAidQueue | null {
+  const live = items.filter((i) => !i.officialCancelled);
+  if (!live.length) return null;
+  const open = live.filter((i) => isArrived(i.state) && !SPECIAL_AID_FINAL_STATES.includes(i.state));
+  if (open.length) {
+    const since = open.map((i) => arrivalOf(i).at).filter((a): a is string => !!a).sort().at(0) ?? null;
+    const latest = [...contacts].filter((c) => !since || c.at >= since).sort((a, b) => a.at.localeCompare(b.at)).at(-1);
+    return latest && (latest.outcome === 'appointment_coordinated' || latest.outcome === 'promised_visit') ? 'appointed' : 'to_invite';
+  }
+  if (live.some((i) => i.state === 'pending')) return 'awaiting_supply';
+  return 'settled';
+}
+
 export const dossierSearchSchema = z.object({
   q: z.string().trim().max(80).optional(),
-  view: z.enum(['all', 'action', 'arrived', 'pending', 'review']).default('all'),
+  view: z.enum(['all', 'action', 'arrived', 'pending', 'review', 'awaiting_supply', 'to_invite', 'appointed', 'settled']).default('all'),
   page: z.number().int().min(1).max(10_000).default(1),
   pageSize: z.number().int().min(5).max(100).default(25),
 });
@@ -362,6 +405,8 @@ export interface SpecialAidItem {
   groupId: string | null;
   nonConsumptionReason: NonConsumptionReason | null;
   nonConsumptionNote: string | null;
+  /** Station that asked for the part, recorded with the non-consumption reason. */
+  requestingStation: string | null;
   holdId: string | null;
   holdNote: string | null;
   /** Linked accident part line: its reservation and delivery stay with the parts desk. */

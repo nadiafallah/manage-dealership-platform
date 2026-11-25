@@ -103,4 +103,21 @@ describe('Staff identifiers and legacy compatibility', () => {
     expect((await admin.put(`/staff/technicians/${clerk!.id}/expert-code`, { personnelCode: '20' })).status).toBe(200);
     expect((await h.db.db.select().from(auditEvents)).filter(e => e.action === 'user.username_changed')).toHaveLength(1);
   });
+  it('gives a service manager MGR + the two-digit code and keeps a legacy EXP manager signing in (scenario 2026-11-25)', async () => {
+    const made = await admin.post('/staff/technicians', { displayName: 'مدیر ساختگی', personnelCode: '۳۰', role: 'service_manager', pin: '4815', devicePassword: 'Device2026test' });
+    expect(made.status).toBe(201);
+    expect(made.body).toEqual(expect.arrayContaining([expect.objectContaining({ username: 'mgr30' })]));
+    const ok = await login('MGR ۳۰', '4815', '');
+    expect(ok.status).toBe(200);
+    expect(ok.body.roles).toEqual(['service_manager']);
+    // A manager created before the change keeps the EXP name until the owner sets a code.
+    const legacy = await admin.post('/staff/technicians', { displayName: 'مدیر قدیمی ساختگی', username: 'exp31', role: 'service_manager', pin: '4815', devicePassword: 'Device2026test' });
+    expect(legacy.status).toBe(201);
+    expect((await login('EXP 31', '4815', '')).status).toBe(200);
+    const [old] = await h.db.db.select().from(users).where(eq(users.username, 'exp31'));
+    expect((await admin.put(`/staff/technicians/${old!.id}/expert-code`, { personnelCode: '31' })).status).toBe(200);
+    const [renamed] = await h.db.db.select().from(users).where(eq(users.id, old!.id));
+    expect(renamed!.username).toBe('mgr31');
+    expect((await login('MGR 31', '4815', '')).status).toBe(200);
+  });
 });

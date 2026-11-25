@@ -2,7 +2,7 @@
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
-import { toPersianDigits, type DossierSearchInput, type Paged, type SpecialAidCard, type SpecialAidDossierRow, type SpecialAidReviewRow } from '@manage/shared';
+import { SPECIAL_AID_QUEUES, SPECIAL_AID_QUEUE_LABELS, toPersianDigits, type DossierSearchInput, type Paged, type SpecialAidCard, type SpecialAidDossierRow, type SpecialAidReviewRow } from '@manage/shared';
 import { api, errorMessage, fetcher } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { faNum } from '@/lib/format';
@@ -12,6 +12,8 @@ import { CardList, CardUpload } from '@/components/SpecialAidRecords';
 
 const VIEWS: { key: DossierSearchInput['view']; label: string }[] = [
   { key: 'all', label: 'همه' }, { key: 'action', label: 'نیازمند اقدام' }, { key: 'arrived', label: 'دارای قطعهٔ رسیده' }, { key: 'pending', label: 'در حال تأمین' }, { key: 'review', label: 'نیازمند بررسی رزرو' },
+  // The four work queues of the reconstruction scenario (owner 2026-11-25).
+  ...SPECIAL_AID_QUEUES.map((k) => ({ key: k, label: SPECIAL_AID_QUEUE_LABELS[k] })),
 ];
 
 /** «پرونده خودروها»: one folder per VIN; search by VIN, plate, customer, special-aid or admission number, or code. */

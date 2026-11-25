@@ -1,5 +1,20 @@
 # Database
 
+## 0038: Requesting station of a special-aid part (owner, 2026-11-25; reconstruction scenario)
+
+Additive migration `0038_special_aid_requesting_station` (down: `apps/api/src/db/down/0038_special_aid_requesting_station.sql`): nullable `special_aid_items.requesting_station`, written with the non-consumption reason. Existing rows keep `null`.
+
+## 0037: Nightly list of the reception module (owner, 2026-11-25; reconstruction scenario)
+
+Additive migration `0037_night_list` (down: `apps/api/src/db/down/0037_night_list.sql`, drops only these two tables). No existing table or row changes; receptions stay read only.
+
+| Table | Purpose |
+| --- | --- |
+| `night_lists` | One per dealership and Tehran day, unique `(tenant_id, day)`. `status` draft/sent, `generated_at`, `sent_at`/`sent_by`, `late_notified_at` (the 18:45 alert went out once), `version`. |
+| `night_list_items` | One per open reception on the list, unique `(list_id, reception_id)`. `reason` (code from `NIGHT_LIST_REASONS`), `reason_note` (required for «سایر»), `current_station`, `next_stations` (typed while کسب‌وکار has no technician data), `carried` (copied from the previous list), `set_by`/`set_at`, `version`. |
+
+Tenant settings (no migration): `settings.receptionServiceLaborCodes` — labour codes that make a reception «سرویس ادواری و روغن» in the daily statistics.
+
 ## 0036: Manage Pulse and the reception module (owner, 2026-11-23; spec section 26)
 
 Additive migration `0036_manage_pulse` (down: `apps/api/src/db/down/0036_manage_pulse.sql`, drops only these tables). No existing table or row changes.

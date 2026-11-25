@@ -29,6 +29,7 @@ import { TechniciansService } from './auth/technicians.service';
 import { InvitationMailService } from './auth/invitation-mail.service';
 import { SessionGuard } from './auth/session.guard';
 import { HttpExceptionFilter } from './common/http-exception.filter';
+import { GuestMaskInterceptor } from './common/guest-mask.interceptor';
 import { IdempotencyInterceptor } from './common/idempotency.interceptor';
 import { APP_CONFIG, type AppConfig } from './config';
 import { DATABASE, openDatabase, type DatabaseHandle } from './db/database';
@@ -127,6 +128,7 @@ export class AppModule {
         { provide: APP_GUARD, useClass: ThrottlerGuard },
         { provide: APP_GUARD, useClass: SessionGuard },
         { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+        { provide: APP_INTERCEPTOR, useClass: GuestMaskInterceptor },
         { provide: APP_FILTER, useClass: HttpExceptionFilter },
       ],
     };

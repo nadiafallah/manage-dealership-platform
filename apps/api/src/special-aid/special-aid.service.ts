@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   EMDAD_ARRIVED_CATEGORIES, NON_CONSUMPTION_REASONS, SPECIAL_AID_FINAL_STATES, SPECIAL_AID_RULES,
-  TECHNICAL_REASONS, allowedItemActions, arrivalAge, daysBetween, dossierTasks, endOfNextWorkingDay, failedAttemptDays, isWorkingDay, maskPhone, nextItemState,
+  CONTACT_OUTCOME_LABELS, NON_CONSUMPTION_LABELS, SPECIAL_AID_ITEM_STATE_LABELS, SPECIAL_AID_QUEUES, dossierQueue, isUnreached, TECHNICAL_REASONS, allowedItemActions, arrivalAge, daysBetween, dossierTasks, endOfNextWorkingDay, failedAttemptDays, isWorkingDay, maskPhone, nextItemState,
   parseProcurementCode, assessmentCodeOf, shortVehicleName, vehicleHeadName, tehranDay,
   type AidContactFacts, type AidItemFacts, type ContactInput, type DossierSearchInput, type ItemActionInput, type NonConsumptionInput,
   type NonConsumptionReason, type Paged, type Permission, type PostponeInput, type SpecialAidContact, type SpecialAidDossier, type SpecialAidDossierRow,
@@ -17,7 +17,7 @@ import { badRequest, conflict, forbidden, notFound, versionConflict } from '../c
 import { newId } from '../common/ids';
 import { DATABASE, type DatabaseHandle, type DbOrTx } from '../db/database';
 import {
-  cases, customers, emdadRequestEvents, emdadRequests, referenceEntries, specialAidAdmissions, specialAidContacts, specialAidDossiers,
+  auditEvents, cases, customers, emdadRequestEvents, emdadRequests, referenceEntries, specialAidAdmissions, specialAidContacts, specialAidDossiers,
   specialAidGroups, specialAidItems, stockReservations, stockSnapshotItems, stockSnapshots, users, vehicles,
 } from '../db/schema';
 import { parseReportDate, reportQuantity } from '../daily-reports/emdad-parts';
@@ -25,7 +25,7 @@ import type { EmdadOfficial } from '../daily-reports/report-rows';
 import { safeCell } from '../daily-reports/safe-cell';
 import { snapshotInfo } from '../daily-reports/stock.service';
 import { notifyUsers, usersWithRole } from '../parts/part-notify';
-import { writeSheet } from '../parts/xlsx';
+import { writeSheet, writeWorkbook } from '../parts/xlsx';
 import { idKey, isAidVehicleKey, isNonUniqueAdmission } from '../vehicle-import/vehicle-sheet';
 
 type ItemRow = typeof specialAidItems.$inferSelect;
@@ -234,7 +234,7 @@ export class SpecialAidService {
           officialStatus: o.emdadStatus ?? '', officialCategory: r.statusCategory, officialRegisteredAt: iso(parseReportDate(o.emdadRegisteredAt)),
           receivedAt: iso(parseReportDate(o.receivedInWarehouseAt)), arrivalObservedAt: iso(i.arrivalObservedAt), statusObservedAt: iso(i.statusObservedAt),
           state: i.state as SpecialAidItemState, allowedActions: accident ? [] : allowedItemActions(i.state as SpecialAidItemState),
-          informedAt: iso(i.informedAt), groupId: i.groupId, nonConsumptionReason: i.nonConsumptionReason as NonConsumptionReason | null, nonConsumptionNote: i.nonConsumptionNote,
+          informedAt: iso(i.informedAt), groupId: i.groupId, nonConsumptionReason: i.nonConsumptionReason as NonConsumptionReason | null, nonConsumptionNote: i.nonConsumptionNote, requestingStation: i.requestingStation,
           holdId: holdOf.get(i.id) ?? null, holdNote: i.holdNote, accidentCaseId: accident, accidentCaseNumber: accident ? caseNumber : null,
           replacesItemId: i.replacesItemId, replacedByItemId: replacedBy.get(i.id) ?? null, version: i.version,
         };
@@ -294,7 +294,9 @@ export class SpecialAidService {
       .filter((l) => !term || l.search.includes(term))
       .map((l) => ({ l, r: this.row(l, now) }))
       .filter(({ l, r }) => q.view === 'all' || (q.view === 'action' && r.actionCount > 0) || (q.view === 'arrived' && r.arrived > 0) || (q.view === 'pending' && r.pending > 0)
-        || (q.view === 'review' && l.items.some((i) => !!i.holdNote)))
+        || (q.view === 'review' && l.items.some((i) => !!i.holdNote))
+        // The four queues of the reconstruction scenario (owner 2026-11-25).
+        || ((SPECIAL_AID_QUEUES as readonly string[]).includes(q.view) && dossierQueue(l.facts, l.contacts) === q.view))
       .sort((a, b) => Number(b.r.urgent) - Number(a.r.urgent) || b.r.actionCount - a.r.actionCount || b.l.dossier.updatedAt.getTime() - a.l.dossier.updatedAt.getTime());
     const items = rows.slice((q.page - 1) * q.pageSize, q.page * q.pageSize).map(({ r }) => withoutTasks(r));
     return { items, total: rows.length, page: q.page, pageSize: q.pageSize };
@@ -356,20 +358,20 @@ export class SpecialAidService {
       const now = new Date();
       const contactId = newId();
       await tx.insert(specialAidContacts).values({ id: contactId, tenantId: actor.user.tenantId, dossierId: id, outcome: input.outcome, note: input.note || null, promisedAt: input.promisedAt ? new Date(input.promisedAt) : null, itemIds: input.itemIds, createdBy: actor.user.id, isTest: actor.user.isTestTenant });
-      if (input.outcome !== 'no_answer') {
+      if (!isUnreached(input.outcome)) {
         for (const i of items.filter((x) => !x.informedAt && x.state !== 'pending')) await tx.update(specialAidItems).set({ informedAt: now, updatedAt: now, version: i.version + 1 }).where(and(eq(specialAidItems.id, i.id), eq(specialAidItems.version, i.version)));
       }
       const all = await tx.select({ at: specialAidContacts.createdAt, outcome: specialAidContacts.outcome }).from(specialAidContacts).where(and(eq(specialAidContacts.tenantId, actor.user.tenantId), eq(specialAidContacts.dossierId, id)));
       const failed = failedAttemptDays(all.map((c) => ({ at: c.at.toISOString(), outcome: c.outcome as ContactInput['outcome'], itemIds: [] })));
       const patch: Partial<typeof specialAidDossiers.$inferInsert> = {};
-      if (input.outcome !== 'no_answer' && d.postponedUntil) { patch.postponedUntil = null; patch.postponeReason = null; }
+      if (!isUnreached(input.outcome) && d.postponedUntil) { patch.postponedUntil = null; patch.postponeReason = null; }
       if (failed >= SPECIAL_AID_RULES.failedAttemptsEscalation && !d.escalatedAt) {
         patch.escalatedAt = now;
         const managers = await usersWithRole(tx, actor.user.tenantId, ['service_manager']);
         const owners = await tx.select({ id: users.id }).from(users).where(and(eq(users.tenantId, actor.user.tenantId), eq(users.isOwner, true), eq(users.isActive, true)));
         await notifyUsers(tx, actor.user.tenantId, [...managers, ...owners.map((o) => o.id)], { kind: 'special_aid.escalation', urgent: true, category: 'special_aid', title: `سه تماس بی‌پاسخ در سه روز جدا · شاسی ${d.vin}`, body: 'مشتری از رسیدن قطعهٔ امداد ویژه خبر ندارد؛ پیگیری مدیریتی لازم است.', link: `/special-aid/vehicles/${id}`, dedupeKey: `special-aid:escalation:${id}:${tehranDay(now)}` });
       }
-      if (input.outcome !== 'no_answer') patch.escalatedAt = null;
+      if (!isUnreached(input.outcome)) patch.escalatedAt = null;
       const saved = await this.bump(tx, d, patch);
       await this.audit.record(tx, actor, { entityType: 'special_aid', entityId: id, action: 'special_aid.contact', after: { contactId, outcome: input.outcome, items: input.itemIds, promisedAt: input.promisedAt ?? null, failedAttemptDays: failed }, snapshot: { version: saved.version, row: saved } });
     });
@@ -457,10 +459,10 @@ export class SpecialAidService {
       if (i.version !== input.expectedVersion) throw versionConflict(i.version);
       if (i.state === 'installed' && input.reason) throw badRequest('SPECIAL_AID_INSTALLED', 'قطعهٔ نصب‌شده علت مصرف‌نشدن ندارد');
       const now = new Date();
-      const [saved] = await tx.update(specialAidItems).set({ nonConsumptionReason: input.reason, nonConsumptionNote: input.note || null, nonConsumptionBy: input.reason ? actor.user.id : null, nonConsumptionAt: input.reason ? now : null, updatedAt: now, version: i.version + 1 })
+      const [saved] = await tx.update(specialAidItems).set({ nonConsumptionReason: input.reason, nonConsumptionNote: input.note || null, requestingStation: input.reason ? input.requestingStation?.trim() || null : null, nonConsumptionBy: input.reason ? actor.user.id : null, nonConsumptionAt: input.reason ? now : null, updatedAt: now, version: i.version + 1 })
         .where(and(eq(specialAidItems.id, i.id), eq(specialAidItems.version, i.version))).returning();
       if (!saved) throw versionConflict();
-      await this.audit.record(tx, actor, { entityType: 'special_aid', entityId: i.id, action: 'special_aid.non_consumption', before: { reason: i.nonConsumptionReason, note: i.nonConsumptionNote }, after: { reason: input.reason, note: input.note ?? null }, snapshot: { version: saved.version, row: saved } });
+      await this.audit.record(tx, actor, { entityType: 'special_aid', entityId: i.id, action: 'special_aid.non_consumption', before: { reason: i.nonConsumptionReason, note: i.nonConsumptionNote, requestingStation: i.requestingStation }, after: { reason: input.reason, note: input.note ?? null, requestingStation: input.reason ? input.requestingStation?.trim() || null : null }, snapshot: { version: saved.version, row: saved } });
       return i.dossierId;
     });
     return this.get(actor, dossierId);
@@ -552,6 +554,39 @@ export class SpecialAidService {
     ]);
   }
 
+  /**
+   * Inspection file of one vehicle (reconstruction scenario, owner 2026-11-25) for Iran Khodro
+   * inspectors: every part with its official and internal dates and state, every contact, and the
+   * audit trail of the dossier and its parts with time and user. No phone number is written.
+   */
+  async inspectionExport(actor: Actor, id: string): Promise<{ vin: string; bytes: Uint8Array }> {
+    const d = await this.get(actor, id);
+    const day = (v: string | null | undefined) => (v ? tehranDay(v) : '');
+    const at = (v: Date | string | null | undefined) => (v ? new Date(v).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '');
+    const cell = (v: string | null | undefined) => safeCell(v ?? '');
+    const history = await this.db.select({ at: auditEvents.occurredAt, action: auditEvents.action, entityId: auditEvents.entityId, reason: auditEvents.reason, by: users.displayName }).from(auditEvents)
+      .leftJoin(users, eq(users.id, auditEvents.actorUserId))
+      .where(and(eq(auditEvents.tenantId, actor.user.tenantId), eq(auditEvents.entityType, 'special_aid'), inArray(auditEvents.entityId, [d.id, ...d.items.map((i) => i.id)])))
+      .orderBy(asc(auditEvents.occurredAt));
+    const partName = new Map(d.items.map((i) => [i.id, [i.description, i.assessmentCode].filter(Boolean).join(' · ')]));
+    const bytes = writeWorkbook([
+      { name: 'قطعات', rows: [
+        ['شاسی (VIN)', 'شمارهٔ امداد ویژه', 'پذیرش', 'کد اختصاصی', 'کد تدارکاتی', 'شرح', 'تعداد', 'وضعیت رسمی', 'ثبت رسمی', 'رسید انبار (رسمی)', 'نخستین مشاهدهٔ رسیدن', 'اطلاع به مشتری', 'وضعیت داخلی', 'علت مصرف‌نشدن', 'توضیح', 'جایگاه درخواست‌دهنده', 'پروندهٔ تصادفی'],
+        ...d.items.map((i) => [cell(d.vin), cell(i.emdadNo), cell(i.admissionNo), cell(i.assessmentCode), cell(i.procurementCode), cell(i.description), cell(i.quantity), cell(i.officialStatus), day(i.officialRegisteredAt), day(i.receivedAt), day(i.arrivalObservedAt), day(i.informedAt),
+          SPECIAL_AID_ITEM_STATE_LABELS[i.state] ?? i.state, i.nonConsumptionReason ? NON_CONSUMPTION_LABELS[i.nonConsumptionReason] : '', cell(i.nonConsumptionNote), cell(i.requestingStation), cell(i.accidentCaseNumber)]),
+      ] },
+      { name: 'تماس‌ها', rows: [
+        ['زمان', 'کاربر', 'نتیجه', 'قطعه‌ها', 'زمان قول مراجعه', 'یادداشت'],
+        ...[...d.contacts].reverse().map((c) => [at(c.at), cell(c.byName), CONTACT_OUTCOME_LABELS[c.outcome] ?? c.outcome, cell(c.itemIds.map((x) => partName.get(x) ?? '').filter(Boolean).join('، ')), at(c.promisedAt), cell(c.note)]),
+      ] },
+      { name: 'سابقه', rows: [
+        ['زمان', 'کاربر', 'اقدام', 'قطعه', 'علت'],
+        ...history.map((h) => [at(h.at), cell(h.by ?? 'سامانه'), h.action, cell(partName.get(h.entityId) ?? ''), cell(h.reason)]),
+      ] },
+    ]);
+    return { vin: d.vin, bytes };
+  }
+
   async summary(actor: Actor, period: { from?: string; to?: string } = {}): Promise<SpecialAidSummary> {
     this.need(actor, 'special_aid.report');
     const now = new Date();
@@ -622,7 +657,7 @@ export class SpecialAidService {
       const attended = !!l.dossier.attendedAt || installed || items.some((i) => ['delivered', 'installation_pending'].includes(i.state));
       c.registered += 1;
       if (items.some(arrivedState)) c.arrived += 1;
-      if (items.some((i) => i.informedAt) || contacts.some((x) => x.outcome !== 'no_answer')) c.informed += 1;
+      if (items.some((i) => i.informedAt) || contacts.some((x) => !isUnreached(x.outcome))) c.informed += 1;
       if (contacts.some((x) => x.outcome === 'appointment_coordinated' || x.outcome === 'promised_visit')) c.invited += 1;
       if (attended) c.attended += 1;
       if (installed) c.installed += 1;

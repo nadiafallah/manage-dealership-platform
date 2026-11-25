@@ -1,7 +1,7 @@
 'use client';
 import { useState, type FormEvent } from 'react';
 import useSWR from 'swr';
-import { technicianUsernameForStation, expertUsernameForCode, displayStaffUsername, REPAIR_TRADE_LABELS, ROLE_LABELS, type PinLoginRole, type RepairTrade, type WorkshopStation } from '@manage/shared';
+import { technicianUsernameForStation, staffUsernameForCode, staffCodePrefixForRoles, displayStaffUsername, REPAIR_TRADE_LABELS, ROLE_LABELS, type PinLoginRole, type RepairTrade, type WorkshopStation } from '@manage/shared';
 import { api, errorMessage, fetcher } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatJalali, toPersianDigits } from '@/lib/format';
@@ -13,7 +13,9 @@ const UNITS: RepairTrade[] = ['body', 'paint', 'suspension', 'electrical', 'mech
 const STAFF_ROLES: PinLoginRole[] = ['technician', 'accident_expert', 'parts_clerk', 'service_manager'];
 type Pending = { tech: Technician; kind: 'pin' | 'active' | 'signout' | 'code' };
 const isTechnicianRow = (t: Technician) => t.roles.includes('technician');
-const hasExpertCode = (t: Technician) => /^exp[0-9]{2}$/.test(t.username);
+const hasExpertCode = (t: Technician) => /^(exp|mgr|gst)[0-9]{2}$/.test(t.username);
+/** EXP, or MGR for a service manager and GST for a guest (scenario 2026-11-25). */
+const codePrefix = (roles: readonly string[]) => staffCodePrefixForRoles(roles).toUpperCase();
 const PIN = '[0-9۰-۹]{4}';
 const toLatinDigits = (v: string) => v.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
 
@@ -34,7 +36,7 @@ export function TechniciansPanel() {
   if (!can('user.manage')) return null;
   const technician = role === 'technician';
   let suggested = '';
-  try { suggested = technician ? (stationCode.trim() ? technicianUsernameForStation(stationCode) : '') : (username.trim() ? expertUsernameForCode(username) : ''); } catch { /* Native validation explains the code format on submission. */ }
+  try { suggested = technician ? (stationCode.trim() ? technicianUsernameForStation(stationCode) : '') : (username.trim() ? staffUsernameForCode(username, staffCodePrefixForRoles([role])) : ''); } catch { /* Native validation explains the code format on submission. */ }
   // TECH follows the assigned bay; EXP follows the owner-selected two-digit code.
   const chosenUsername = suggested;
   const freeBays = (stations ?? []).filter((st) => st.trade === trade && st.isActive && !st.responsibleUserId);
@@ -92,7 +94,7 @@ export function TechniciansPanel() {
         ? await run(() => api(`/staff/technicians/${t.id}/sign-out`, { body: extra }))
         : await run(() => api(`/staff/technicians/${t.id}/active`, { method: 'PUT', body: { active: !t.isActive, ...extra } }));
     if (ok) {
-      setMessage(pending.kind === 'code' ? `نام کاربری ${t.displayName} از این پس EXP ${toPersianDigits(newCode)} است؛ رمز و دستگاه‌هایش تغییری نکرد. نام تازه را به خودش بگویید.` : pending.kind === 'pin' ? `رمز تازهٔ ${t.displayName} ثبت شد و ورودهای قبلی او بسته شد.` : pending.kind === 'signout' ? `${t.displayName} از همهٔ دستگاه‌ها خارج شد.` : t.isActive ? `${t.displayName} غیرفعال شد.` : `${t.displayName} فعال شد.`);
+      setMessage(pending.kind === 'code' ? `نام کاربری ${t.displayName} از این پس ${codePrefix(t.roles)} ${toPersianDigits(newCode)} است؛ رمز و دستگاه‌هایش تغییری نکرد. نام تازه را به خودش بگویید.` : pending.kind === 'pin' ? `رمز تازهٔ ${t.displayName} ثبت شد و ورودهای قبلی او بسته شد.` : pending.kind === 'signout' ? `${t.displayName} از همهٔ دستگاه‌ها خارج شد.` : t.isActive ? `${t.displayName} غیرفعال شد.` : `${t.displayName} فعال شد.`);
       setPending(null);
     }
   }
@@ -105,7 +107,7 @@ export function TechniciansPanel() {
   return (
     <section className="card technicians" aria-labelledby="technicians-title">
       <h2 id="technicians-title">افزودن کارمند</h2>
-      <p className="muted small">همهٔ کارکنان فقط با نام کاربری و رمز ۴ رقمی وارد می‌شوند؛ تکنسین با TECH و کد جایگاه، بقیه با EXP و کد دو رقمی. مالک و مدیر سیستم با ایمیل و Google Authenticator وارد می‌شوند.</p>
+      <p className="muted small">همهٔ کارکنان فقط با نام کاربری و رمز ۴ رقمی وارد می‌شوند؛ تکنسین با TECH و کد جایگاه، مدیر خدمات با MGR، مهمان با GST و بقیه با EXP و کد دو رقمی. مالک و مدیر سیستم با ایمیل و Google Authenticator وارد می‌شوند.</p>
 
       <form onSubmit={create} className="technician-form">
         <label className="field">
@@ -122,7 +124,7 @@ export function TechniciansPanel() {
           <span>{technician ? 'نام کاربری' : 'کد دو رقمی کارشناس'}</span>
           <input name="username" className="input ltr-input" readOnly={technician} required={!technician} pattern={technician ? undefined : '[0-9۰-۹٠-٩]{2}'} title="کد کارشناس دو رقم باشد؛ مانند 00 یا 02" placeholder={technician ? 'پس از انتخاب جایگاه' : '00'} autoCapitalize="none" spellCheck={false} value={technician ? displayStaffUsername(suggested) : username} onChange={(e) => setUsername(e.target.value)} />
         </label>
-        {!technician && <span className="muted small">نام کاربری: <bdi dir="ltr">{displayStaffUsername(suggested) || 'EXP …'}</bdi></span>}
+        {!technician && <span className="muted small">نام کاربری: <bdi dir="ltr">{displayStaffUsername(suggested) || `${codePrefix([role])} …`}</bdi></span>}
         <label className="field">
           <span>رمز ۴ رقمی</span>
           <input name="pin" className="input ltr-input" inputMode="numeric" required pattern={PIN} maxLength={4} autoComplete="off" value={pin} onChange={(e) => setPin(e.target.value)} />
@@ -162,7 +164,7 @@ export function TechniciansPanel() {
           <strong>{pending.kind === 'code' ? `کد کارشناس برای ${pending.tech.displayName}` : pending.kind === 'pin' ? `رمز تازه برای ${pending.tech.displayName}` : pending.kind === 'signout' ? `خروج ${pending.tech.displayName} از همهٔ دستگاه‌ها` : `${pending.tech.isActive ? 'غیرفعال کردن' : 'فعال کردن'} ${pending.tech.displayName}`}</strong>
           {pending.kind === 'code' && (
             <label className="field">
-              <span>کد دو رقمی (نام کاربری: EXP + این کد)</span>
+              <span>کد دو رقمی (نام کاربری: {codePrefix(pending.tech.roles)} + این کد)</span>
               <input name="personnelCode" className="input ltr-input" inputMode="numeric" required pattern="[0-9۰-۹٠-٩]{2}" maxLength={2} title="دو رقم؛ مانند 00 یا 20" placeholder="20" defaultValue={hasExpertCode(pending.tech) ? pending.tech.username.slice(3) : ''} autoComplete="off" autoFocus />
             </label>
           )}
@@ -213,7 +215,7 @@ function StaffTable({ rows, busy, onPin, onSignOut, onCode, onToggle, empty }: {
               <td>{t.lastLoginAt ? formatJalali(t.lastLoginAt, { time: true }) : '—'}</td>
               <td className="technician-actions">
                 {onPin && <button type="button" className="btn btn-sm" disabled={busy} aria-label={`رمز تازه برای ${t.displayName}`} onClick={() => onPin(t)}>{t.hasPin ? 'رمز تازه' : 'تعیین رمز ۴ رقمی'}</button>}
-                {onCode && !isTechnicianRow(t) && <button type="button" className="btn btn-sm" disabled={busy} aria-label={`کد کارشناس برای ${t.displayName}`} onClick={() => onCode(t)}>{hasExpertCode(t) ? 'تغییر کد EXP' : 'تعیین کد EXP'}</button>}
+                {onCode && !isTechnicianRow(t) && <button type="button" className="btn btn-sm" disabled={busy} aria-label={`کد کارشناس برای ${t.displayName}`} onClick={() => onCode(t)}>{hasExpertCode(t) ? `تغییر کد ${codePrefix(t.roles)}` : `تعیین کد ${codePrefix(t.roles)}`}</button>}
                 {onSignOut && <button type="button" className="btn btn-sm" disabled={busy} onClick={() => onSignOut(t)}>خروج از دستگاه‌ها</button>}
                 <button type="button" className="btn btn-sm" disabled={busy} onClick={() => onToggle(t)}>{t.isActive ? 'غیرفعال کردن' : 'فعال کردن'}</button>
               </td>

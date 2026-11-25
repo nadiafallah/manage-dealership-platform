@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { formatJalali } from './jalali';
+import { NIGHT_LIST_REASONS } from './night-list';
 import { toLatinDigits, toPersianDigits } from './text';
 import type { Paged } from './types';
 
@@ -261,13 +262,42 @@ export function pulseSentence(s: Pick<PulseStatus, 'enabled' | 'state' | 'lastRe
 export const RECEPTION_VIEWS = ['today', 'open', 'released'] as const;
 export type ReceptionView = (typeof RECEPTION_VIEWS)[number];
 export const RECEPTION_VIEW_LABELS: Record<ReceptionView, string> = { today: 'پذیرش‌های امروز', open: 'پذیرش‌های باز', released: 'ترخیص‌شده‌ها' };
+/** Open receptions by Tehran admission day: yesterday, the day before, three days or more (scenario 2026-11-25). */
+export const RECEPTION_STAY_FILTERS = ['1', '2', '3plus'] as const;
+export type ReceptionStay = (typeof RECEPTION_STAY_FILTERS)[number];
+export const RECEPTION_STAY_LABELS: Record<ReceptionStay, string> = { '1': 'مانده از دیروز', '2': 'مانده از پریروز', '3plus': '۳ روز و بیشتر' };
+const receptionDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'تاریخ نامعتبر است');
 export const receptionSearchSchema = z.object({
   view: z.enum(RECEPTION_VIEWS),
   q: z.string().trim().max(80).optional(),
+  stay: z.enum(RECEPTION_STAY_FILTERS).optional(),
+  /** Admission day range on the Tehran calendar (YYYY-MM-DD), both ends included. */
+  from: receptionDay.optional(),
+  to: receptionDay.optional(),
   page: z.number().int().min(1).max(10_000).default(1),
   pageSize: z.number().int().min(10).max(100).default(30),
-}).strict();
+}).strict().refine((v) => !v.from || !v.to || v.from <= v.to, { message: 'ابتدای بازه بعد از انتهای آن است', path: ['to'] });
 export type ReceptionSearchInput = z.infer<typeof receptionSearchSchema>;
+/** Daily statistics of one Tehran day (today when omitted). */
+export const receptionStatsQuerySchema = z.object({ date: receptionDay.optional() }).strict();
+/** Labour codes of periodic service and oil change (owner or system administrator). */
+export const receptionSettingsSchema = z.object({
+  serviceLaborCodes: z.array(z.string().trim().min(1).max(32)).max(500),
+}).strict();
+export type ReceptionSettingsInput = z.infer<typeof receptionSettingsSchema>;
+export interface ReceptionSettings { serviceLaborCodes: string[] }
+
+/** «لیست شب» (scenario 2026-11-25): the list of one Tehran day (today when omitted). */
+export const nightListQuerySchema = z.object({ day: receptionDay.optional() }).strict();
+export const nightListItemSchema = z.object({
+  expectedVersion: z.number().int().min(1),
+  reason: z.enum(NIGHT_LIST_REASONS).nullable(),
+  reasonNote: z.string().trim().max(300).optional(),
+  currentStation: z.string().trim().max(60).optional(),
+  nextStations: z.string().trim().max(120).optional(),
+}).strict().refine((v) => v.reason !== 'other' || !!v.reasonNote?.trim(), { message: 'برای «سایر» توضیح کوتاه بنویسید', path: ['reasonNote'] });
+export type NightListItemInput = z.infer<typeof nightListItemSchema>;
+export const nightListSendSchema = z.object({ expectedVersion: z.number().int().min(1) }).strict();
 
 export interface ReceptionRow {
   id: string;

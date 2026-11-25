@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import type { TechnicianPinInput } from '@manage/shared';
 import { randomBytes } from 'node:crypto';
-import { normalizeRoles, nextTechnicianUsername, technicianUsernameForStation, expertUsernameForCode, REPAIR_TRADE_LABELS, type RepairTrade, type TechnicianAccountInput } from '@manage/shared';
+import { normalizeRoles, nextTechnicianUsername, technicianUsernameForStation, staffCodePrefixForRoles, staffUsernameForCode, REPAIR_TRADE_LABELS, type RepairTrade, type TechnicianAccountInput } from '@manage/shared';
 import { AuditService } from '../audit/audit.service';
 import { badRequest, conflict, notFound } from '../common/errors';
 import { newId } from '../common/ids';
@@ -99,7 +99,7 @@ export class TechniciansService {
       try {
         derived = input.role === 'technician' && input.stationCode
           ? technicianUsernameForStation(input.stationCode)
-          : input.role !== 'technician' && input.personnelCode ? expertUsernameForCode(input.personnelCode) : undefined;
+          : input.role !== 'technician' && input.personnelCode ? staffUsernameForCode(input.personnelCode, staffCodePrefixForRoles([input.role])) : undefined;
       } catch { throw badRequest('INVALID_STAFF_CODE', 'کد جایگاه یا کد دو رقمی کارشناس معتبر نیست'); }
       if (derived && input.username && input.username.toLowerCase() !== derived) throw badRequest('USERNAME_CODE_MISMATCH', 'نام کاربری باید با کد جایگاه یا کد انتخابی کارشناس یکسان باشد');
       const username = derived ?? input.username ??
@@ -194,8 +194,8 @@ export class TechniciansService {
   }
 
   /**
-   * Gives an existing expert, parts clerk or service manager the owner-chosen
-   * EXP + two-digit username. Only the sign-in name changes: ID, PIN, device
+   * Gives an existing expert, parts clerk, service manager or guest the owner-chosen
+   * two-digit username (EXP, MGR for a service manager, GST for a guest). Only the sign-in name changes: ID, PIN, device
    * password, registered devices, open sessions and history stay. The old name
    * is not kept as an alias. Technicians follow their station code instead.
    */
@@ -205,7 +205,8 @@ export class TechniciansService {
       if (normalizeRoles(user.roles).includes('technician')) throw badRequest('TECHNICIAN_USES_STATION', 'نام کاربری تکنسین از کد جایگاه او ساخته می‌شود');
       requireSupportReason(actor, reason);
       let username: string;
-      try { username = expertUsernameForCode(code); } catch { throw badRequest('INVALID_STAFF_CODE', 'کد کارشناس باید دو رقم باشد'); }
+      // EXP for operational roles, MGR for a service manager, GST for a guest (scenario 2026-11-25). Existing names stay valid until changed here.
+      try { username = staffUsernameForCode(code, staffCodePrefixForRoles(normalizeRoles(user.roles))); } catch { throw badRequest('INVALID_STAFF_CODE', 'کد کارشناس باید دو رقم باشد'); }
       if (username === user.username) return;
       const [taken] = await tx.select({ id: users.id }).from(users).where(and(eq(users.tenantId, actor.user.tenantId), eq(users.username, username)));
       if (taken) throw conflict('USERNAME_TAKEN', `نام کاربری ${username.toUpperCase()} متعلق به همکار دیگری است`);

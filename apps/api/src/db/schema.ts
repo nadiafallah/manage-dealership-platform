@@ -1588,6 +1588,8 @@ export const specialAidItems = pgTable('special_aid_items', {
   nonConsumptionNote: text('non_consumption_note'),
   nonConsumptionBy: uuid('non_consumption_by').references(() => users.id),
   nonConsumptionAt: ts('non_consumption_at'),
+  /** Station that asked for the part (migration 0038, scenario 2026-11-25). */
+  requestingStation: text('requesting_station'),
   /** Why the automatic hold was not (fully) placed, shown to the operator. */
   holdNote: text('hold_note'),
   /** Earlier request of the same vehicle this one replaces (wrong part number); both stay in history. */
@@ -1906,3 +1908,42 @@ export const receptionEvents = pgTable('reception_events', {
   occurredAt: ts('occurred_at').notNull().defaultNow(),
   isTest: boolean('is_test').notNull().default(false),
 }, (t) => [index('reception_events_reception_idx').on(t.receptionId, t.occurredAt), index('reception_events_tenant_idx').on(t.tenantId, t.occurredAt)]);
+
+/**
+ * «لیست شب» (reconstruction scenario, owner 2026-11-25; migration 0037): the open receptions of a
+ * Tehran working day at 18:00, sent by the reception supervisor by 18:45. One list per day.
+ */
+export const nightLists = pgTable('night_lists', {
+  id: uuid('id').primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  /** Tehran calendar day, YYYY-MM-DD. */
+  day: text('day').notNull(),
+  /** draft | sent */
+  status: text('status').notNull().default('draft'),
+  generatedAt: ts('generated_at').notNull().defaultNow(),
+  sentAt: ts('sent_at'),
+  sentBy: uuid('sent_by').references(() => users.id),
+  /** The 18:45 alert to the service manager went out (once). */
+  lateNotifiedAt: ts('late_notified_at'),
+  version: integer('version').notNull().default(1),
+  isTest: boolean('is_test').notNull().default(false),
+}, (t) => [uniqueIndex('night_lists_tenant_day_uq').on(t.tenantId, t.day)]);
+
+/** One vehicle on a nightly list: the stay reason and stations the receptionist picks. */
+export const nightListItems = pgTable('night_list_items', {
+  id: uuid('id').primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  listId: uuid('list_id').notNull().references(() => nightLists.id),
+  receptionId: uuid('reception_id').notNull().references(() => receptions.id),
+  reason: text('reason'),
+  reasonNote: text('reason_note'),
+  currentStation: text('current_station'),
+  nextStations: text('next_stations'),
+  /** Reason copied from the previous list for the same reception, not yet changed or confirmed. */
+  carried: boolean('carried').notNull().default(false),
+  setBy: uuid('set_by').references(() => users.id),
+  setAt: ts('set_at'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  version: integer('version').notNull().default(1),
+  isTest: boolean('is_test').notNull().default(false),
+}, (t) => [uniqueIndex('night_list_items_list_reception_uq').on(t.listId, t.receptionId), index('night_list_items_tenant_reception_idx').on(t.tenantId, t.receptionId)]);

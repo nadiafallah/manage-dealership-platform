@@ -129,7 +129,9 @@ test('a service manager is created the same way without unit or bay, signs in wi
   const staffContext=await browser.newContext({baseURL});
   try{
     const staffPage=await staffContext.newPage();
-    await pinSignIn(staffPage,'EXP 20','2580');
+    // Scenario 2026-11-25: a service manager's two-digit code makes MGR (not EXP).
+    await expect(panel.getByRole('row',{name:/مدیر خدمات آزمون/})).toContainText('MGR 20');
+    await pinSignIn(staffPage,'MGR 20','2580');
     await expect(staffPage).toHaveURL(/\/launch$/);
   }finally{
     await staffContext.close();

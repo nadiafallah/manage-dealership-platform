@@ -43,12 +43,15 @@ it('0036 up, down and up again on PGlite without touching existing rows', async 
     await client.query("insert into pulse_connections(id,tenant_id,dealer_code,username,settings,is_test) values ($1,$2,'9999','test.user','{}'::jsonb,true)", [randomUUID(), tenant]);
     await expect(client.query("insert into pulse_connections(id,tenant_id,dealer_code,username,settings) values ($1,$2,'9999','x','{}'::jsonb)", [randomUUID(), tenant])).rejects.toThrow();
 
+    // Later migrations depend on these tables (0037 nightly list): roll them back first, newest first.
+    const later = journal.entries.filter((e: { idx: number }) => e.idx > 36).map((e: { tag: string }) => e.tag).reverse() as string[];
+    for (const tag of later) await client.exec(readFileSync(join(source, '../down', `${tag}.sql`), 'utf8'));
     await client.exec(readFileSync(join(source, '../down', '0036_manage_pulse.sql'), 'utf8'));
     for (const t of PULSE_TABLES) expect((await client.query(`select to_regclass('public.${t}') as name`)).rows).toEqual([{ name: null }]);
     expect((await client.query('select to_jsonb(c) as data from cases c where id=$1', [kase])).rows).toEqual(before);
 
-    // Up again: the migration journal entry is removed as a rehearsal would, then 0036 runs a second time.
-    await client.query("delete from drizzle.__drizzle_migrations where id = (select max(id) from drizzle.__drizzle_migrations)");
+    // Up again: the journal entries are removed as a rehearsal would, then 0036 and the later ones run a second time.
+    await client.query(`delete from drizzle.__drizzle_migrations where id in (select id from drizzle.__drizzle_migrations order by id desc limit ${later.length + 1})`);
     await migrate(db, { migrationsFolder: source });
     for (const t of PULSE_TABLES) expect((await client.query(`select to_regclass('public.${t}') as name`)).rows).toEqual([{ name: t }]);
     expect((await client.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows).toEqual([{ n: journal.entries.length }]);

@@ -29,6 +29,13 @@ export class SpecialAidController {
   @RequirePermissions('special_aid.read') @Post('dossiers/search')
   list(@CurrentActor() actor: Actor, @Body(new ZodPipe(dossierSearchSchema)) body: DossierSearchInput) { return this.aid.list(actor, body); }
 
+  /** Inspection file of one vehicle: parts, contacts and audit trail (scenario 2026-11-25). */
+  @RequirePermissions('special_aid.read') @Get('dossiers/:id/inspection')
+  async inspection(@CurrentActor() actor: Actor, @IdParam('id') id: string) {
+    const { bytes } = await this.aid.inspectionExport(actor, id);
+    return new StreamableFile(Buffer.from(bytes), { type: XLSX, disposition: 'attachment; filename="special-aid-inspection.xlsx"' });
+  }
+
   @RequirePermissions('special_aid.read') @Get('dossiers/:id')
   get(@CurrentActor() actor: Actor, @IdParam() id: string) { return this.aid.get(actor, id); }
 

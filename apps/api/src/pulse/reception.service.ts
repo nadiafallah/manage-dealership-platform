@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import {
-  daysInShop, searchKey, shortVehicleName,
+  daysInShop, normalizeLaborCode, receptionDayStats, searchKey, shortVehicleName, TEHRAN_OFFSET_MINUTES,
+  type ReceptionDayStats, type ReceptionSettings, type ReceptionSettingsInput,
   type ReceptionDetail, type ReceptionEvent, type ReceptionEventKind, type ReceptionExternalState, type ReceptionExternalUpdateInput, type ReceptionExternalWork as ExternalWorkView, type ReceptionExternalWorkInput, type ReceptionList, type ReceptionSearchInput,
 } from '@manage/shared';
 import { AuditService } from '../audit/audit.service';
@@ -11,7 +12,7 @@ import { badRequest, conflict, notFound, versionConflict } from '../common/error
 import { newId } from '../common/ids';
 import { APP_CONFIG, type AppConfig } from '../config';
 import { DATABASE, type DatabaseHandle, type DbOrTx } from '../db/database';
-import { cases, externalContractors, pulseConnections, receptionDefects, receptionDocuments, receptionEvents, receptionExternalWork, receptionNotes, receptionParts, receptionRepairs, receptions, users } from '../db/schema';
+import { cases, externalContractors, pulseConnections, tenants, receptionDefects, receptionDocuments, receptionEvents, receptionExternalWork, receptionNotes, receptionParts, receptionRepairs, receptions, users } from '../db/schema';
 import { CARD } from './kasb-protocol';
 import { cleanText, kasbInstant } from './kasb-table';
 import { cardDescription, tehranMidnight } from './pulse-map';
@@ -19,6 +20,10 @@ import { cardDescription, tehranMidnight } from './pulse-map';
 const iso = (d: Date | null | undefined) => d?.toISOString() ?? null;
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 const MAX_INVOICE = 3 * 1024 * 1024;
+const DAY_MS = 86_400_000;
+/** Start of a Tehran calendar day (YYYY-MM-DD) as an instant; Iran has no daylight saving time. */
+const tehranDayStart = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - TEHRAN_OFFSET_MINUTES * 60_000);
+const tehranDayKey = (at: Date) => new Date(at.getTime() + TEHRAN_OFFSET_MINUTES * 60_000).toISOString().slice(0, 10);
 
 /**
  * «پذیرش و ترخیص» (spec section 26): reception folders read by Manage Pulse. Everything that
@@ -49,6 +54,17 @@ export class ReceptionService {
     if (input.view === 'released') conds.push(eq(receptions.isOpen, false));
     const key = input.q ? searchKey(input.q).replace(/~/g, '') : '';
     if (key) conds.push(sql`${receptions.searchText} like ${`%${escapeLike(key)}%`} escape '\\'`);
+    // «مانده از دیروز / پریروز / ۳ روز و بیشتر»: admission day on the Tehran calendar.
+    if (input.stay) {
+      const today = tehranMidnight(new Date()).getTime();
+      if (input.stay === '3plus') conds.push(lt(receptions.admittedAt, new Date(today - 2 * DAY_MS)));
+      else {
+        const back = Number(input.stay);
+        conds.push(gte(receptions.admittedAt, new Date(today - back * DAY_MS)), lt(receptions.admittedAt, new Date(today - (back - 1) * DAY_MS)));
+      }
+    }
+    if (input.from) conds.push(gte(receptions.admittedAt, tehranDayStart(input.from)));
+    if (input.to) conds.push(lt(receptions.admittedAt, new Date(tehranDayStart(input.to).getTime() + DAY_MS)));
     const where = and(...conds);
     const [{ n: total }] = (await this.db.select({ n: count() }).from(receptions).where(where)) as [{ n: number }];
     const partsCount = sql<number>`(select count(*)::int from ${receptionParts} p where p.reception_id = ${receptions.id} and p.removed_at is null)`;
@@ -83,6 +99,46 @@ export class ReceptionService {
       pageSize: input.pageSize,
       lastReadAt: iso(conn?.lastReadAt),
     };
+  }
+
+  /** Labour codes of periodic service and oil change kept in the dealership settings. */
+  async settings(actor: Actor): Promise<ReceptionSettings> {
+    const [t] = await this.db.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, actor.user.tenantId));
+    const codes = (t?.settings as Record<string, unknown> | undefined)?.receptionServiceLaborCodes;
+    return { serviceLaborCodes: Array.isArray(codes) ? codes.filter((c): c is string => typeof c === 'string') : [] };
+  }
+
+  async saveSettings(actor: Actor, input: ReceptionSettingsInput): Promise<ReceptionSettings> {
+    const codes = [...new Set(input.serviceLaborCodes.map(normalizeLaborCode).filter(Boolean))];
+    await this.db.transaction(async (tx) => {
+      const [t] = await tx.select().from(tenants).where(eq(tenants.id, actor.user.tenantId)).for('update');
+      const before = (t!.settings ?? {}) as Record<string, unknown>;
+      const after: Record<string, unknown> = { ...before, receptionServiceLaborCodes: codes };
+      await tx.update(tenants).set({ settings: after }).where(eq(tenants.id, actor.user.tenantId));
+      await this.audit.record(tx, actor, { entityType: 'tenant', entityId: actor.user.tenantId, action: 'settings.reception_service_codes_updated', before: { receptionServiceLaborCodes: before.receptionServiceLaborCodes ?? [] }, after: { receptionServiceLaborCodes: codes } });
+    });
+    return this.settings(actor);
+  }
+
+  /**
+   * Daily statistics (scenario 2026-11-25): receptions admitted on one Tehran day, split into
+   * repair / periodic service / no labour yet, overall and per receptionist as written in کسب‌وکار.
+   */
+  async stats(actor: Actor, date?: string): Promise<ReceptionDayStats> {
+    this.ensureActive();
+    const tenantId = actor.user.tenantId;
+    const day = date ?? tehranDayKey(new Date());
+    const start = tehranDayStart(day);
+    const rows = await this.db.select({ id: receptions.id, receptionist: receptions.receptionist }).from(receptions)
+      .where(and(eq(receptions.tenantId, tenantId), gte(receptions.admittedAt, start), lt(receptions.admittedAt, new Date(start.getTime() + DAY_MS))));
+    const lines = rows.length
+      ? await this.db.select({ receptionId: receptionRepairs.receptionId, code: receptionRepairs.code }).from(receptionRepairs)
+        .where(and(eq(receptionRepairs.tenantId, tenantId), inArray(receptionRepairs.receptionId, rows.map((r) => r.id)), isNull(receptionRepairs.removedAt)))
+      : [];
+    const codesOf = new Map<string, (string | null)[]>();
+    for (const l of lines) codesOf.set(l.receptionId, [...(codesOf.get(l.receptionId) ?? []), l.code]);
+    const { serviceLaborCodes } = await this.settings(actor);
+    return receptionDayStats(day, rows.map((r) => ({ receptionist: r.receptionist, codes: codesOf.get(r.id) ?? [] })), serviceLaborCodes);
   }
 
   private async load(tx: DbOrTx, tenantId: string, id: string) {
