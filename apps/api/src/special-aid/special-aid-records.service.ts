@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import {
-  CARD_MAX_BYTES, FEEDBACK_KIND_LABELS, appointmentInstant, appointmentState, normalizeVin,
+  CARD_MAX_BYTES, FEEDBACK_KIND_LABELS, appointmentInstant, appointmentState, autoLinkedAppointments, effectiveRelation, normalizeVin,
   type AppointmentRelation, type AppointmentState, type CardMatchInput, type CardUploadInput, type FeedbackAckInput, type FeedbackInput,
   type FeedbackKind, type NonConsumptionReason, type SpecialAidAppointment, type SpecialAidCard, type SpecialAidFeedback, type SpecialAidReviewRow,
 } from '@manage/shared';
@@ -168,7 +168,12 @@ export class SpecialAidRecordsService {
 
   // ------------------------------------------------------------------ appointments (tracking only)
 
-  async appointmentsOf(tenantId: string, dossierId: string, vin: string, attendedAt: Date | null, now = new Date()): Promise<{ appointments: SpecialAidAppointment[]; state: AppointmentState }> {
+  /**
+   * Appointments of the vehicle from the imported ISACO list. Spec 29.3: one undecided appointment on or
+   * after the earliest arrival of a waiting part (`since`) is linked automatically (`auto`); the operator's
+   * decision wins and several candidates are left for review.
+   */
+  async appointmentsOf(tenantId: string, dossierId: string, vin: string, attendedAt: Date | null, now = new Date(), since: string | null = null): Promise<{ appointments: SpecialAidAppointment[]; state: AppointmentState }> {
     const [entries, links, [last]] = await Promise.all([
       this.db.select({ e: referenceEntries, fileName: referenceImports.fileName }).from(referenceEntries).leftJoin(referenceImports, eq(referenceImports.id, referenceEntries.sourceImportId))
         .where(and(eq(referenceEntries.tenantId, tenantId), eq(referenceEntries.kind, 'appointments'), eq(referenceEntries.lookupKey, vin))),
@@ -183,11 +188,13 @@ export class SpecialAidRecordsService {
       return {
         id: e.id, at: appointmentInstant(d.appointmentDate, d.appointmentTime), dateText: d.appointmentDate ?? null, timeText: d.appointmentTime ?? null,
         status: d.status ?? null, serviceType: d.serviceType ?? null, admissionNo: d.admissionNo ?? null, appointmentNo: d.appointmentNo ?? null,
-        relation: (link?.l.relation as AppointmentRelation | undefined) ?? null, relationByName: link?.by ?? null, fileName: fileName ?? '', importedAt: e.updatedAt.toISOString(),
+        relation: (link?.l.relation as AppointmentRelation | undefined) ?? null, relationByName: link?.by ?? null, fileName: fileName ?? '', importedAt: e.updatedAt.toISOString(), auto: false,
       };
     }).sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''));
-    const state = appointmentState({ appointments: appointments.map((a) => ({ id: a.id, at: a.at, relation: a.relation })), lastReportAt: iso(last?.at), attendedAt: iso(attendedAt), now });
-    return { appointments, state };
+    const auto = autoLinkedAppointments(appointments, since);
+    const shown = appointments.map((a) => (auto.has(a.id) ? { ...a, relation: effectiveRelation(a, auto), auto: true } : a));
+    const state = appointmentState({ appointments: shown.map((a) => ({ id: a.id, at: a.at, relation: a.relation })), lastReportAt: iso(last?.at), attendedAt: iso(attendedAt), now });
+    return { appointments: shown, state };
   }
 
   /** The operator says whether an appointment of this VIN belongs to the special-aid follow-up. */

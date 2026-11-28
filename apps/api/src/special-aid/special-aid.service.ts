@@ -1,12 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
-  EMDAD_ARRIVED_CATEGORIES, NON_CONSUMPTION_REASONS, SPECIAL_AID_FINAL_STATES, SPECIAL_AID_RULES,
-  CONTACT_OUTCOME_LABELS, NON_CONSUMPTION_LABELS, SPECIAL_AID_ITEM_STATE_LABELS, SPECIAL_AID_QUEUES, dossierQueue, isUnreached, TECHNICAL_REASONS, allowedItemActions, arrivalAge, daysBetween, dossierTasks, endOfNextWorkingDay, failedAttemptDays, isGuestOnlyViewer, isWorkingDay, maskPersonName, maskPhone, maskVehicleId, nextItemState,
-  parseProcurementCode, assessmentCodeOf, shortVehicleName, vehicleHeadName, tehranDay,
-  type AidContactFacts, type AidItemFacts, type ContactInput, type DossierSearchInput, type ItemActionInput, type NonConsumptionInput,
+  EMDAD_ARRIVED_CATEGORIES, NON_CONSUMPTION_REASONS, SPECIAL_AID_FINAL_STATES,
+  AID_DEADLINE_LABELS, CONTACT_OUTCOME_LABELS, NON_CONSUMPTION_LABELS, SPECIAL_AID_ITEM_STATE_LABELS, SPECIAL_AID_QUEUES, aidDeadline, appointmentInstant, autoLinkedAppointments, dossierQueue, effectiveRelation, isContactFailed, isUnreached, openArrivalSince, TECHNICAL_REASONS, allowedItemActions, daysBetween, dossierTasks, endOfNextWorkingDay, failedAttemptDays, isGuestOnlyViewer, isWorkingDay, maskPersonName, maskPhone, maskVehicleId, nextItemState,
+  parseProcurementCode, assessmentCodeOf, shortVehicleName, unansweredStreak, vehicleHeadName, worstDeadline, tehranDay,
+  type AidContactFacts, type AidItemFacts, type AppointmentRelation, type ContactInput, type DossierSearchInput, type ItemActionInput, type NonConsumptionInput,
   type NonConsumptionReason, type Paged, type Permission, type PostponeInput, type SpecialAidContact, type SpecialAidDossier, type SpecialAidDossierRow,
-  type SpecialAidItem, type SpecialAidItemState, type SpecialAidSummary, type SpecialAidFunnel, type SpecialAidSupplyRow, type SpecialAidTodayEntry,
+  type SpecialAidItem, type SpecialAidItemState, type SpecialAidSummary, type SpecialAidFunnel, type SpecialAidSupplyRow, type SpecialAidTask, type SpecialAidTodayEntry,
   type ReplacementInput, type SpecialAidVehicle, type SupplySearchInput,
 } from '@manage/shared';
 import { calendarAt } from '../workshop/work-calendar';
@@ -17,8 +17,8 @@ import { badRequest, conflict, forbidden, notFound, versionConflict } from '../c
 import { newId } from '../common/ids';
 import { DATABASE, type DatabaseHandle, type DbOrTx } from '../db/database';
 import {
-  auditEvents, cases, customers, emdadRequestEvents, emdadRequests, referenceEntries, specialAidAdmissions, specialAidContacts, specialAidDossiers,
-  specialAidGroups, specialAidItems, stockReservations, stockSnapshotItems, stockSnapshots, users, vehicles,
+  auditEvents, cases, customers, emdadRequestEvents, emdadRequests, notifications, referenceEntries, specialAidAdmissions, specialAidAppointmentLinks, specialAidContacts, specialAidDossiers,
+  specialAidGroups, specialAidItems, stockReservations, stockSnapshotItems, stockSnapshots, tenants, users, vehicles,
 } from '../db/schema';
 import { parseReportDate, reportQuantity } from '../daily-reports/emdad-parts';
 import type { EmdadOfficial } from '../daily-reports/report-rows';
@@ -53,7 +53,12 @@ interface Loaded {
   search: string;
   /** The dealership's working days (workshop calendar with recorded holidays). */
   isWorkingDay: (day: string) => boolean;
+  /** An appointment of the vehicle in the imported ISACO report is linked (operator or automatically, spec 29.3). */
+  linkedAppointment: boolean;
 }
+type Row = SpecialAidDossierRow & { tasks: SpecialAidTask[] };
+/** A call (or the arrival announcement) that was due before today and is still not made. */
+const overdueCall = (tasks: readonly SpecialAidTask[]) => tasks.some((t) => (t.section === 'calls' || t.kind === 'inform_arrival') && t.overdue && !t.postponed);
 
 /**
  * «پیگیری امداد ویژه» (spec section 25). Reads the official special-aid rows kept by the
@@ -80,7 +85,7 @@ export class SpecialAidService {
     return this.db.transaction(async (tx) => {
       const tenantId = actor.user.tenantId;
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`special-aid:${tenantId}`}))`);
-      const result = { dossiers: 0, admissions: 0, items: 0, statusChanges: 0, arrived: 0, held: 0, holdReview: 0, invalidVin: 0, reconciled: 0, cardsMatched: 0 };
+      const result = { dossiers: 0, admissions: 0, items: 0, statusChanges: 0, arrived: 0, held: 0, holdReview: 0, invalidVin: 0, reconciled: 0, cardsMatched: 0, notified: 0 };
       const rows = await tx.select({ r: emdadRequests, i: specialAidItems, dVin: specialAidDossiers.vin, aKey: specialAidAdmissions.admissionKey }).from(emdadRequests)
         .leftJoin(specialAidItems, eq(specialAidItems.requestId, emdadRequests.id))
         .leftJoin(specialAidDossiers, eq(specialAidDossiers.id, specialAidItems.dossierId))
@@ -88,6 +93,9 @@ export class SpecialAidService {
         .where(eq(emdadRequests.tenantId, tenantId))
         .orderBy(emdadRequests.id);
       const dossierIds = new Map<string, string>();
+      // Vehicles with a part that arrived in this run (not a line already arrived before the module saw it).
+      const arrivals = new Map<string, { vin: string; count: number }>();
+      const arrivedIn = (dossierId: string, vin: string) => { const e = arrivals.get(dossierId) ?? { vin, count: 0 }; e.count += 1; arrivals.set(dossierId, e); };
       for (const { r, i, dVin, aKey } of rows) {
         const vin = idKey(r.chassis ?? '');
         // Each admission number of the VIN is its own admission; a non-unique placeholder is none.
@@ -135,6 +143,7 @@ export class SpecialAidService {
           }).onConflictDoNothing();
           result.items += 1;
           if (arrived) result.arrived += 1;
+          if (arrived && !backfill) arrivedIn(dossierId, vin);
           continue;
         }
         const patch: Partial<ItemRow> = { updatedAt: new Date(), version: i.version + 1 };
@@ -142,7 +151,7 @@ export class SpecialAidService {
           patch.observedCategory = r.statusCategory;
           patch.statusObservedAt = r.lastReportAt;
           result.statusChanges += 1;
-          if (arrived && i.state === 'pending') { patch.state = 'arrived'; patch.arrivalObservedAt = i.arrivalObservedAt ?? r.lastReportAt; result.arrived += 1; }
+          if (arrived && i.state === 'pending') { patch.state = 'arrived'; patch.arrivalObservedAt = i.arrivalObservedAt ?? r.lastReportAt; result.arrived += 1; arrivedIn(i.dossierId, vin); }
         }
         await tx.update(specialAidItems).set(patch).where(and(eq(specialAidItems.id, i.id), eq(specialAidItems.version, i.version)));
         if (patch.state || patch.observedCategory) await this.audit.record(tx, actor, { entityType: 'special_aid', entityId: i.id, action: 'special_aid.status_observed', before: { category: i.observedCategory, state: i.state }, after: { category: r.statusCategory, state: patch.state ?? i.state, reportAt: r.lastReportAt.toISOString() } });
@@ -154,6 +163,16 @@ export class SpecialAidService {
           const held = await this.placeHold(tx, actor, c.i, c.r);
           if (held.ok) result.held += 1; else result.holdReview += 1;
         }
+      }
+      // «وقتی قطعه رسید» (owner, 2026-11-28): the special-aid operators are told to invite the customer,
+      // once per vehicle and day. The appointment itself is booked in ISACO, never in Manage.
+      if (arrivals.size) {
+        const operators = await usersWithRole(tx, tenantId, ['special_aid_operator']);
+        const day = tehranDay(new Date());
+        for (const [dossierId, a] of arrivals) {
+          await notifyUsers(tx, tenantId, operators, { kind: 'special_aid.arrived', category: 'special_aid', title: `قطعهٔ امداد ویژه رسید · شاسی ${a.vin}`, body: `${a.count > 1 ? `${a.count} قطعه رسید. ` : ''}مشتری را تا پایان روز کاری بعد خبر و دعوت کنید؛ نوبت در سامانهٔ نوبت‌دهی کسب‌وکار ثبت می‌شود و منیج آن را از گزارش نوبت به پرونده وصل می‌کند.`, link: `/special-aid/vehicles/${dossierId}`, dedupeKey: `special-aid:arrived:${dossierId}:${day}` });
+        }
+        result.notified = arrivals.size;
       }
       // New admissions may identify archived cards that did not match before.
       result.cardsMatched = await this.records.retryCards(tx, tenantId);
@@ -206,12 +225,12 @@ export class SpecialAidService {
 
   // ------------------------------------------------------------------ read model
 
-  private async load(tenantId: string, dossierIds?: string[], canSeePhone = false): Promise<Loaded[]> {
+  private async load(tenantId: string, dossierIds?: string[], canSeePhone = false, now = new Date()): Promise<Loaded[]> {
     if (dossierIds && !dossierIds.length) return [];
     const dossiers = await this.db.select().from(specialAidDossiers).where(and(eq(specialAidDossiers.tenantId, tenantId), dossierIds ? inArray(specialAidDossiers.id, dossierIds) : undefined));
     if (!dossiers.length) return [];
     const ids = dossiers.map((d) => d.id);
-    const [itemRows, holds, admissions, contacts, groups] = await Promise.all([
+    const [itemRows, holds, admissions, contacts, groups, appointmentRows, appointmentLinks] = await Promise.all([
       this.db.select({ i: specialAidItems, r: emdadRequests, caseNumber: cases.caseNumber }).from(specialAidItems).innerJoin(emdadRequests, eq(emdadRequests.id, specialAidItems.requestId)).leftJoin(cases, eq(cases.id, emdadRequests.caseId))
         .where(and(eq(specialAidItems.tenantId, tenantId), inArray(specialAidItems.dossierId, ids))).orderBy(specialAidItems.createdAt, specialAidItems.id),
       this.db.select({ id: stockReservations.id, itemId: stockReservations.specialAidItemId }).from(stockReservations).innerJoin(specialAidItems, eq(specialAidItems.id, stockReservations.specialAidItemId))
@@ -219,10 +238,17 @@ export class SpecialAidService {
       this.db.select().from(specialAidAdmissions).where(and(eq(specialAidAdmissions.tenantId, tenantId), inArray(specialAidAdmissions.dossierId, ids))).orderBy(specialAidAdmissions.createdAt),
       this.db.select({ c: specialAidContacts, byName: users.displayName }).from(specialAidContacts).innerJoin(users, eq(users.id, specialAidContacts.createdBy)).where(and(eq(specialAidContacts.tenantId, tenantId), inArray(specialAidContacts.dossierId, ids))).orderBy(specialAidContacts.createdAt),
       this.db.select().from(specialAidGroups).where(and(eq(specialAidGroups.tenantId, tenantId), inArray(specialAidGroups.dossierId, ids))),
+      // Appointments of these vehicles in the imported ISACO list, and the operators' decisions on them (spec 29.3).
+      this.db.select({ id: referenceEntries.id, vin: referenceEntries.lookupKey, data: referenceEntries.data }).from(referenceEntries)
+        .where(and(eq(referenceEntries.tenantId, tenantId), eq(referenceEntries.kind, 'appointments'), inArray(referenceEntries.lookupKey, dossiers.map((d) => d.vin)))),
+      this.db.select({ dossierId: specialAidAppointmentLinks.dossierId, entryId: specialAidAppointmentLinks.entryId, relation: specialAidAppointmentLinks.relation }).from(specialAidAppointmentLinks)
+        .where(and(eq(specialAidAppointmentLinks.tenantId, tenantId), inArray(specialAidAppointmentLinks.dossierId, ids))),
     ]);
     const holdOf = new Map(holds.map((h) => [h.itemId!, h.id]));
-    const calendar = (await calendarAt(this.db, tenantId, new Date().toISOString())).calendar;
-    const working = (day: string) => isWorkingDay(day, calendar);
+    const calendar = (await calendarAt(this.db, tenantId, now.toISOString())).calendar;
+    // The same few hundred days are asked for every part: one answer per day.
+    const workingDays = new Map<string, boolean>();
+    const working = (day: string) => { let w = workingDays.get(day); if (w === undefined) { w = isWorkingDay(day, calendar); workingDays.set(day, w); } return w; };
     const replacedBy = new Map(itemRows.filter((x) => x.i.replacesItemId).map((x) => [x.i.replacesItemId!, x.i.id]));
     const vehicleOf = await this.vehicles(tenantId, dossiers.map((d) => d.vin), canSeePhone);
     return dossiers.map((dossier) => {
@@ -230,23 +256,33 @@ export class SpecialAidService {
       const items: SpecialAidItem[] = mine.map(({ i, r, caseNumber }) => {
         const o = off(r);
         const accident = r.partRequestId && r.matchStatus === 'matched' ? r.caseId : null;
+        const receivedAt = iso(parseReportDate(o.receivedInWarehouseAt));
+        const state = i.state as SpecialAidItemState;
         return {
           id: i.id, requestId: r.id, admissionId: i.admissionId, admissionNo: r.admissionNo, emdadNo: r.emdadNo,
           assessmentCode: assessmentCodeOf(o.partCode) ?? assessmentCodeOf(o.initialCode) ?? (o.partCode || null), procurementCode: o.fullCode || null,
           description: o.specialDescription || o.supplyDescription || null, quantity: o.specialQuantity || null,
           officialStatus: o.emdadStatus ?? '', officialCategory: r.statusCategory, officialRegisteredAt: iso(parseReportDate(o.emdadRegisteredAt)),
-          receivedAt: iso(parseReportDate(o.receivedInWarehouseAt)), arrivalObservedAt: iso(i.arrivalObservedAt), statusObservedAt: iso(i.statusObservedAt),
-          state: i.state as SpecialAidItemState, allowedActions: accident ? [] : allowedItemActions(i.state as SpecialAidItemState),
+          receivedAt, arrivalObservedAt: iso(i.arrivalObservedAt), statusObservedAt: iso(i.statusObservedAt),
+          state, allowedActions: accident ? [] : allowedItemActions(state),
           informedAt: iso(i.informedAt), groupId: i.groupId, nonConsumptionReason: i.nonConsumptionReason as NonConsumptionReason | null, nonConsumptionNote: i.nonConsumptionNote, requestingStation: i.requestingStation,
           holdId: holdOf.get(i.id) ?? null, holdNote: i.holdNote, accidentCaseId: accident, accidentCaseNumber: accident ? caseNumber : null,
-          replacesItemId: i.replacesItemId, replacedByItemId: replacedBy.get(i.id) ?? null, version: i.version,
+          replacesItemId: i.replacesItemId, replacedByItemId: replacedBy.get(i.id) ?? null,
+          deadline: aidDeadline({ state, receivedAt, arrivalObservedAt: iso(i.arrivalObservedAt), officialCancelled: r.statusCategory === 'cancelled' }, now, working),
+          version: i.version,
         };
       });
-      const facts: AidItemFacts[] = items.map((x) => ({ id: x.id, state: x.state, receivedAt: x.receivedAt, arrivalObservedAt: x.arrivalObservedAt, informedAt: x.informedAt, groupId: x.groupId, officialCancelled: x.officialCategory === 'cancelled' }));
+      const facts: AidItemFacts[] = items.map((x) => ({ id: x.id, state: x.state, receivedAt: x.receivedAt, arrivalObservedAt: x.arrivalObservedAt, informedAt: x.informedAt, groupId: x.groupId, officialCancelled: x.officialCategory === 'cancelled', registeredAt: x.officialRegisteredAt }));
+      // An appointment on or after the earliest waiting arrival: the operator's decision, otherwise the automatic link.
+      const since = openArrivalSince(facts);
+      const decided = new Map(appointmentLinks.filter((x) => x.dossierId === dossier.id).map((x) => [x.entryId, x.relation as AppointmentRelation]));
+      const appts = appointmentRows.filter((a) => a.vin === dossier.vin).map((a) => { const data = a.data as Record<string, string | undefined>; return { id: a.id, at: appointmentInstant(data.appointmentDate, data.appointmentTime), relation: decided.get(a.id) ?? null }; });
+      const auto = autoLinkedAppointments(appts, since);
+      const linkedAppointment = !!since && appts.some((a) => a.at && tehranDay(a.at) >= tehranDay(since) && effectiveRelation(a, auto) === 'related');
       const myAdmissions = admissions.filter((a) => a.dossierId === dossier.id).map((a) => ({ id: a.id, admissionNo: a.admissionNo, admissionDate: a.admissionDate, itemCount: items.filter((x) => x.admissionId === a.id).length }));
       const vehicle = vehicleOf.get(dossier.vin) ?? { customerName: null, phone: null, model: null, plate: null };
       return {
-        dossier, items, facts, admissions: myAdmissions, vehicle, isWorkingDay: working,
+        dossier, items, facts, admissions: myAdmissions, vehicle, isWorkingDay: working, linkedAppointment,
         contacts: contacts.filter((c) => c.c.dossierId === dossier.id).map(({ c, byName }) => ({ id: c.id, outcome: c.outcome as SpecialAidContact['outcome'], note: c.note, promisedAt: iso(c.promisedAt), itemIds: c.itemIds, byName, at: c.createdAt.toISOString() })),
         groups: groups.filter((g) => g.dossierId === dossier.id).map((g) => ({ id: g.id, label: g.label, decision: g.decision as 'wait' | 'partial' | null, itemIds: items.filter((x) => x.groupId === g.id).map((x) => x.id), version: g.version })).filter((g) => g.itemIds.length),
         search: idKey([dossier.vin, vehicle.customerName, vehicle.plate, vehicle.model, ...items.flatMap((x) => [x.emdadNo, x.admissionNo, x.assessmentCode, x.procurementCode, x.description])].filter(Boolean).join(' ')),
@@ -275,14 +311,20 @@ export class SpecialAidService {
     return out;
   }
 
-  private row(l: Loaded, now: Date): SpecialAidDossierRow & { tasks: ReturnType<typeof dossierTasks> } {
+  private row(l: Loaded, now: Date): Row {
     const tasks = dossierTasks(this.factsOf(l), now);
     const active = tasks.filter((t) => !t.postponed);
+    const live = new Set(l.items.filter((i) => !SPECIAL_AID_FINAL_STATES.includes(i.state) && i.officialCategory !== 'cancelled').map((i) => i.id));
     return {
       id: l.dossier.id, vin: l.dossier.vin, vehicle: l.vehicle, admissionCount: l.admissions.length,
       arrived: l.items.filter((i) => i.state !== 'pending' && i.officialCategory !== 'cancelled').length,
       pending: l.items.filter((i) => i.state === 'pending' && i.officialCategory !== 'cancelled').length,
-      actionCount: active.length, urgent: active.some((t) => t.urgent), nextTask: active[0] ?? null, version: l.dossier.version, tasks,
+      actionCount: active.length, urgent: active.some((t) => t.urgent), nextTask: active[0] ?? null,
+      deadline: worstDeadline(l.items.map((i) => i.deadline)),
+      // A failed contact matters only while a part still needs the customer.
+      contactFailed: live.size > 0 && isContactFailed(l.contacts),
+      lastContactAt: l.contacts.map((c) => c.at).sort().at(-1) ?? null,
+      version: l.dossier.version, tasks,
     };
   }
   private factsOf(l: Loaded) {
@@ -301,37 +343,49 @@ export class SpecialAidService {
       .filter(({ l, r }) => q.view === 'all' || (q.view === 'action' && r.actionCount > 0) || (q.view === 'arrived' && r.arrived > 0) || (q.view === 'pending' && r.pending > 0)
         || (q.view === 'review' && l.items.some((i) => !!i.holdNote))
         // The four queues of the reconstruction scenario (owner 2026-11-25).
-        || ((SPECIAL_AID_QUEUES as readonly string[]).includes(q.view) && dossierQueue(l.facts, l.contacts) === q.view))
+        || ((SPECIAL_AID_QUEUES as readonly string[]).includes(q.view) && dossierQueue(l.facts, l.contacts, { linkedAppointment: l.linkedAppointment }) === q.view)
+        // Colours of the 20-working-day deadline, overdue calls and failed contacts (management report links).
+        || ((q.view === 'yellow' || q.view === 'red' || q.view === 'expired') && r.deadline?.level === q.view)
+        || (q.view === 'calls_overdue' && overdueCall(r.tasks)) || (q.view === 'contact_failed' && r.contactFailed))
       .sort((a, b) => Number(b.r.urgent) - Number(a.r.urgent) || b.r.actionCount - a.r.actionCount || b.l.dossier.updatedAt.getTime() - a.l.dossier.updatedAt.getTime());
     const items = rows.slice((q.page - 1) * q.pageSize, q.page * q.pageSize).map(({ r }) => withoutTasks(r));
     return { items, total: rows.length, page: q.page, pageSize: q.pageSize };
   }
 
+  /**
+   * «کارهای امروز» (owner, 2026-11-28): due calls, newly arrived parts to invite and yellow/red dossiers,
+   * one entry per vehicle; each task says which of the three parts it belongs to. Parts whose deadline
+   * has ended are listed for the one-click release (spec 29.2).
+   */
   async today(actor: Actor): Promise<SpecialAidTodayEntry[]> {
     this.need(actor, 'special_aid.read');
     const now = new Date();
-    return (await this.load(actor.user.tenantId, undefined, actor.user.permissions.has('customer.pii.read')))
-      .map((l) => this.row(l, now)).filter((r) => r.tasks.some((t) => !t.postponed))
-      .sort((a, b) => Number(b.urgent) - Number(a.urgent) || (a.nextTask?.dueAt ?? '').localeCompare(b.nextTask?.dueAt ?? ''))
-      .map(({ tasks, ...dossier }) => ({ dossier, tasks: tasks.filter((t) => !t.postponed) }));
+    return (await this.load(actor.user.tenantId, undefined, actor.user.permissions.has('customer.pii.read'), now))
+      .map((l) => ({ l, r: this.row(l, now) })).filter(({ r }) => r.tasks.some((t) => !t.postponed))
+      .sort((a, b) => Number(b.r.urgent) - Number(a.r.urgent) || (a.r.nextTask?.dueAt ?? '').localeCompare(b.r.nextTask?.dueAt ?? ''))
+      .map(({ l, r: { tasks, ...dossier } }) => ({
+        dossier, tasks: tasks.filter((t) => !t.postponed),
+        releasable: l.items.filter((i) => i.deadline?.level === 'expired' && i.allowedActions.includes('release'))
+          .map((i) => ({ id: i.id, version: i.version, description: i.description, code: i.procurementCode ?? i.assessmentCode, endsAt: i.deadline!.endsAt })),
+      }));
   }
 
   async get(actor: Actor, id: string): Promise<SpecialAidDossier> {
     this.need(actor, 'special_aid.read');
-    const [l] = await this.load(actor.user.tenantId, [id], actor.user.permissions.has('customer.pii.read'));
-    if (!l) throw notFound('پروندهٔ امداد ویژه');
     const now = new Date();
+    const [l] = await this.load(actor.user.tenantId, [id], actor.user.permissions.has('customer.pii.read'), now);
+    if (!l) throw notFound('پروندهٔ امداد ویژه');
     const { tasks, ...row } = this.row(l, now);
     const tenantId = actor.user.tenantId;
     const canAppointments = actor.user.permissions.has('reference.appointments.read');
     const [appointments, cards, feedback] = await Promise.all([
-      canAppointments ? this.records.appointmentsOf(tenantId, l.dossier.id, l.dossier.vin, l.dossier.attendedAt, now) : Promise.resolve({ appointments: [], state: 'no_report' as const }),
+      canAppointments ? this.records.appointmentsOf(tenantId, l.dossier.id, l.dossier.vin, l.dossier.attendedAt, now, openArrivalSince(l.facts)) : Promise.resolve({ appointments: [], state: 'no_report' as const }),
       this.records.cardsOf(tenantId, l.dossier.id),
       actor.user.permissions.has('special_aid.warn') || actor.user.permissions.has('special_aid.report') ? this.records.feedback(actor, { dossierId: l.dossier.id }) : Promise.resolve([]),
     ]);
     return {
       ...row, tasks, admissions: l.admissions, items: l.items, contacts: [...l.contacts].reverse(), groups: l.groups, postponedUntil: iso(l.dossier.postponedUntil), postponeReason: l.dossier.postponeReason,
-      failedAttemptDays: failedAttemptDays(this.factsOf(l).contacts), appointments: appointments.appointments, appointmentState: appointments.state, cards, feedback,
+      failedAttemptDays: failedAttemptDays(this.factsOf(l).contacts), unansweredStreak: unansweredStreak(l.contacts), appointments: appointments.appointments, appointmentState: appointments.state, cards, feedback,
     };
   }
 
@@ -354,7 +408,7 @@ export class SpecialAidService {
     return rows;
   }
 
-  /** One customer call for the vehicle, covering the chosen parts. Three failed days tell management. */
+  /** One customer call for the vehicle, covering the chosen parts. Two unanswered calls in a row are a failed contact; management is told once. */
   async contact(actor: Actor, id: string, input: ContactInput) {
     this.need(actor, 'special_aid.operate');
     await this.db.transaction(async (tx) => {
@@ -366,19 +420,22 @@ export class SpecialAidService {
       if (!isUnreached(input.outcome)) {
         for (const i of items.filter((x) => !x.informedAt && x.state !== 'pending')) await tx.update(specialAidItems).set({ informedAt: now, updatedAt: now, version: i.version + 1 }).where(and(eq(specialAidItems.id, i.id), eq(specialAidItems.version, i.version)));
       }
-      const all = await tx.select({ at: specialAidContacts.createdAt, outcome: specialAidContacts.outcome }).from(specialAidContacts).where(and(eq(specialAidContacts.tenantId, actor.user.tenantId), eq(specialAidContacts.dossierId, id)));
-      const failed = failedAttemptDays(all.map((c) => ({ at: c.at.toISOString(), outcome: c.outcome as ContactInput['outcome'], itemIds: [] })));
+      const all = (await tx.select({ at: specialAidContacts.createdAt, outcome: specialAidContacts.outcome }).from(specialAidContacts).where(and(eq(specialAidContacts.tenantId, actor.user.tenantId), eq(specialAidContacts.dossierId, id))))
+        .map((c) => ({ at: c.at.toISOString(), outcome: c.outcome as ContactInput['outcome'], itemIds: [] }));
+      const failed = failedAttemptDays(all);
+      const streak = unansweredStreak(all);
       const patch: Partial<typeof specialAidDossiers.$inferInsert> = {};
       if (!isUnreached(input.outcome) && d.postponedUntil) { patch.postponedUntil = null; patch.postponeReason = null; }
-      if (failed >= SPECIAL_AID_RULES.failedAttemptsEscalation && !d.escalatedAt) {
+      // «تماس ناموفق» (spec 29.5): the second unanswered call in a row; one notice per streak.
+      if (isContactFailed(all) && !d.escalatedAt) {
         patch.escalatedAt = now;
         const managers = await usersWithRole(tx, actor.user.tenantId, ['service_manager']);
         const owners = await tx.select({ id: users.id }).from(users).where(and(eq(users.tenantId, actor.user.tenantId), eq(users.isOwner, true), eq(users.isActive, true)));
-        await notifyUsers(tx, actor.user.tenantId, [...managers, ...owners.map((o) => o.id)], { kind: 'special_aid.escalation', urgent: true, category: 'special_aid', title: `سه تماس بی‌پاسخ در سه روز جدا · شاسی ${d.vin}`, body: 'مشتری از رسیدن قطعهٔ امداد ویژه خبر ندارد؛ پیگیری مدیریتی لازم است.', link: `/special-aid/vehicles/${id}`, dedupeKey: `special-aid:escalation:${id}:${tehranDay(now)}` });
+        await notifyUsers(tx, actor.user.tenantId, [...managers, ...owners.map((o) => o.id)], { kind: 'special_aid.escalation', urgent: true, category: 'special_aid', title: `تماس ناموفق: دو تماس بی‌پاسخ · شاسی ${d.vin}`, body: 'مشتری دو بار پشت سر هم پاسخ نداد؛ پیگیری مدیریتی لازم است. تماس ده‌روزه ادامه دارد و در پایان مهلت ۲۰ روز کاری قطعه برای آزادسازی علامت می‌خورد.', link: `/special-aid/vehicles/${id}`, dedupeKey: `special-aid:escalation:${id}:${tehranDay(now)}` });
       }
       if (!isUnreached(input.outcome)) patch.escalatedAt = null;
       const saved = await this.bump(tx, d, patch);
-      await this.audit.record(tx, actor, { entityType: 'special_aid', entityId: id, action: 'special_aid.contact', after: { contactId, outcome: input.outcome, items: input.itemIds, promisedAt: input.promisedAt ?? null, failedAttemptDays: failed }, snapshot: { version: saved.version, row: saved } });
+      await this.audit.record(tx, actor, { entityType: 'special_aid', entityId: id, action: 'special_aid.contact', after: { contactId, outcome: input.outcome, items: input.itemIds, promisedAt: input.promisedAt ?? null, failedAttemptDays: failed, unansweredStreak: streak, contactFailed: isContactFailed(all) }, snapshot: { version: saved.version, row: saved } });
     });
     return this.get(actor, id);
   }
@@ -428,8 +485,16 @@ export class SpecialAidService {
         if (!res.ok) throw badRequest('SPECIAL_AID_HOLD_FAILED', res.note ?? 'رزرو انجام نشد');
         return i.dossierId;
       }
-      if (input.action === 'deliver' || input.action === 'release') {
+      // An arrived part that Manage could not hold is released without a hold to free.
+      if (input.action === 'deliver' || (input.action === 'release' && from !== 'arrived')) {
         if (!hold) throw badRequest('SPECIAL_AID_NO_HOLD', 'رزرو فعالی برای این قطعه نیست');
+      }
+      // The release records where the part stood on its 20-working-day deadline (spec 29.2: one click at the end).
+      let deadline: { level: string; day: number; endsAt: string } | null = null;
+      if (input.action === 'release') {
+        const calendar = (await calendarAt(tx, tenantId, now.toISOString())).calendar;
+        const dl = aidDeadline({ state: from, receivedAt: iso(parseReportDate(off(r!).receivedInWarehouseAt)), arrivalObservedAt: iso(i.arrivalObservedAt) }, now, (day) => isWorkingDay(day, calendar));
+        deadline = dl ? { level: dl.level, day: dl.day, endsAt: dl.endsAt } : null;
       }
       // Installed completes the consumption once: an issued hold stops lowering the usable quantity
       // (the business report shows the consumption from now on). Leaving the warehouse alone never does.
@@ -449,7 +514,7 @@ export class SpecialAidService {
       }
       const [saved] = await tx.update(specialAidItems).set({ state: to, updatedAt: now, version: i.version + 1 }).where(and(eq(specialAidItems.id, i.id), eq(specialAidItems.version, i.version))).returning();
       if (!saved) throw versionConflict();
-      await this.audit.record(tx, actor, { entityType: 'special_aid', entityId: i.id, action: `special_aid.${input.action}`, reason: input.reason ?? null, before: { state: from }, after: { state: to, reservationId: hold?.id ?? null, consumed: input.action === 'installed' && !!hold }, snapshot: { version: saved.version, row: saved } });
+      await this.audit.record(tx, actor, { entityType: 'special_aid', entityId: i.id, action: `special_aid.${input.action}`, reason: input.reason ?? null, before: { state: from }, after: { state: to, reservationId: hold?.id ?? null, consumed: input.action === 'installed' && !!hold, ...(input.action === 'release' ? { deadline } : {}) }, snapshot: { version: saved.version, row: saved } });
       return i.dossierId;
     });
     return this.get(actor, dossierId);
@@ -595,7 +660,7 @@ export class SpecialAidService {
   async summary(actor: Actor, period: { from?: string; to?: string } = {}): Promise<SpecialAidSummary> {
     this.need(actor, 'special_aid.report');
     const now = new Date();
-    const loaded = await this.load(actor.user.tenantId);
+    const loaded = await this.load(actor.user.tenantId, undefined, false, now);
     const items = loaded.flatMap((l) => l.items).filter((i) => i.officialCategory !== 'cancelled');
     const reasons = Object.fromEntries(NON_CONSUMPTION_REASONS.map((r) => [r, 0])) as Record<NonConsumptionReason, number>;
     for (const i of items) if (i.nonConsumptionReason) reasons[i.nonConsumptionReason] += 1;
@@ -617,10 +682,15 @@ export class SpecialAidService {
     const weeks = new Map<string, { week: string; registered: number; arrived: number; installed: number }>();
     const bucket = (v: string | null, k: 'registered' | 'arrived' | 'installed') => { if (!v || daysBetween(v, now) > 7 * 8) return; const w = weekKey(v); const e = weeks.get(w) ?? { week: w, registered: 0, arrived: 0, installed: 0 }; e[k] += 1; weeks.set(w, e); };
     for (const i of items) { bucket(i.officialRegisteredAt, 'registered'); bucket(i.receivedAt ?? i.arrivalObservedAt, 'arrived'); }
+    // Dossier colours of the 20-working-day deadline, overdue calls and failed contacts (owner, 2026-11-28).
+    const rows = loaded.map((l) => this.row(l, now));
+    const colour = (level: 'yellow' | 'red' | 'expired') => rows.filter((r) => r.deadline?.level === level).length;
     return {
       total: items.length,
       pending: items.filter((i) => i.state === 'pending').length,
-      overdue: items.filter((i) => ['arrived', 'reserved', 'not_installed'].includes(i.state) && (arrivalAge(i, now) ?? 0) >= SPECIAL_AID_RULES.warnDays).length,
+      deadline: { yellow: colour('yellow'), red: colour('red'), expired: colour('expired') },
+      overdueCalls: rows.filter((r) => overdueCall(r.tasks)).length,
+      contactFailed: rows.filter((r) => r.contactFailed).length,
       arrivedUnused: items.filter((i) => ['arrived', 'reserved', 'delivered', 'installation_pending', 'not_installed'].includes(i.state)).length,
       reserved: items.filter((i) => !!i.holdId).length,
       released: items.filter((i) => i.state === 'released').length,
@@ -633,7 +703,7 @@ export class SpecialAidService {
       stalledSupply: stalled,
       feedbackOpen: fb.open,
       warningsIssued: fb.warnings,
-      funnel: this.funnel(loaded, period, now),
+      funnel: this.funnel(loaded, period),
     };
   }
 
@@ -641,7 +711,7 @@ export class SpecialAidService {
    * Customer (vehicle) and part funnels. A part belongs to the period by its official registration
    * day (Tehran); a vehicle when at least one of its parts does. Cancelled requests are left out.
    */
-  private funnel(loaded: Loaded[], period: { from?: string; to?: string }, now: Date): SpecialAidFunnel {
+  private funnel(loaded: Loaded[], period: { from?: string; to?: string }): SpecialAidFunnel {
     const inPeriod = (i: SpecialAidItem) => {
       if (i.officialCategory === 'cancelled') return false;
       const day = i.officialRegisteredAt ? tehranDay(i.officialRegisteredAt) : null;
@@ -651,7 +721,7 @@ export class SpecialAidService {
     };
     const arrivedState = (i: SpecialAidItem) => i.state !== 'pending';
     const openArrived = (i: SpecialAidItem) => ['arrived', 'reserved', 'delivered', 'installation_pending', 'not_installed'].includes(i.state);
-    const c = { registered: 0, arrived: 0, informed: 0, invited: 0, attended: 0, installed: 0, releasedNoShow: 0, arrivedNotInformed: 0, arrivedOver30NoVisit: 0 };
+    const c = { registered: 0, arrived: 0, informed: 0, invited: 0, attended: 0, installed: 0, releasedNoShow: 0, arrivedNotInformed: 0, pastDeadlineNoVisit: 0 };
     const p = { requested: 0, pending: 0, arrived: 0, installed: 0, releasedToOthers: 0, arrivedOpen: 0 };
     for (const l of loaded) {
       const items = l.items.filter(inPeriod);
@@ -669,7 +739,7 @@ export class SpecialAidService {
       if (!attended && items.some((i) => i.state === 'released')) c.releasedNoShow += 1;
       const open = items.filter(openArrived);
       if (open.some((i) => !i.informedAt)) c.arrivedNotInformed += 1;
-      if (!attended && open.some((i) => (arrivalAge(i, now) ?? 0) >= 30)) c.arrivedOver30NoVisit += 1;
+      if (!attended && open.some((i) => i.deadline?.level === 'expired')) c.pastDeadlineNoVisit += 1;
       for (const i of items) {
         p.requested += 1;
         if (i.state === 'pending') p.pending += 1; else p.arrived += 1;
@@ -679,6 +749,36 @@ export class SpecialAidService {
       }
     }
     return { period: { from: period.from ?? null, to: period.to ?? null }, customers: c, parts: p };
+  }
+
+  /**
+   * «پایان مهلت» (spec 29.2): when the 20th working day of a waiting part has ended, the special-aid
+   * operators and system administrators are told once per vehicle and deadline day. Nothing is released
+   * here: the release stays one click of an authorized person. Only deadlines that ended in the last
+   * few days are announced, so old parts never flood the bell; they stay visible in «کارهای امروز».
+   */
+  async deadlineSweep(now = new Date()): Promise<number> {
+    let sent = 0;
+    for (const t of await this.db.select({ id: tenants.id }).from(tenants)) {
+      const calendar = (await calendarAt(this.db, t.id, now.toISOString())).calendar;
+      if (!isWorkingDay(tehranDay(now), calendar)) continue;
+      const due = (await this.load(t.id, undefined, false, now)).map((l) => ({ l, items: l.items.filter((i) => i.deadline?.level === 'expired' && now.getTime() - Date.parse(i.deadline.endsAt) < 4 * 86_400_000) })).filter((x) => x.items.length);
+      if (!due.length) continue;
+      await this.db.transaction(async (tx) => {
+        const recipients = await usersWithRole(tx, t.id, ['special_aid_operator', 'system_admin']);
+        for (const { l, items } of due) {
+          const day = tehranDay(items.map((i) => i.deadline!.endsAt).sort()[0]!);
+          const notice = {
+            kind: 'special_aid.deadline', urgent: true, category: 'special_aid', link: `/special-aid/vehicles/${l.dossier.id}`, dedupeKey: `special-aid:deadline:${l.dossier.id}:${day}`,
+            title: `${AID_DEADLINE_LABELS.expired} · شاسی ${l.dossier.vin}`,
+            body: `${items.length > 1 ? `${items.length} قطعهٔ` : 'قطعهٔ'} این خودرو ۲۰ روز کاری پس از رسیدن هنوز تعیین تکلیف نشده؛ با یک کلیک برای مشتری دیگر آزاد کنید یا علت را ثبت کنید. آزادسازی خودکار انجام نمی‌شود.`,
+          };
+          const rows = recipients.map((userId) => ({ id: newId(), tenantId: t.id, userId, ...notice }));
+          if (rows.length) sent += (await tx.insert(notifications).values(rows).onConflictDoNothing().returning({ id: notifications.id })).length;
+        }
+      });
+    }
+    return sent;
   }
 
   /** Called after an Emdad report was published (its own transaction; the report stays published). */

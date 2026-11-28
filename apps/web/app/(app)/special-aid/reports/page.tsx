@@ -35,7 +35,7 @@ export default function SpecialAidReports() {
           {kpi('کل درخواست‌ها', faNum(s.total), '/special-aid/vehicles')}
           {kpi('در حال تأمین', faNum(s.pending), '/special-aid/supply')}
           {kpi('رسیده و مصرف‌نشده', faNum(s.arrivedUnused), '/special-aid/vehicles')}
-          {kpi('بیش از ۲۰ روز از رسید', faNum(s.overdue), '/special-aid/vehicles')}
+          {kpi('پایان مهلت ۲۰ روز کاری', faNum(s.deadline.expired), '/special-aid/vehicles?view=expired')}
           {kpi('رزرو فعال برای خودرو', faNum(s.reserved))}
           {kpi('رزرو آزادشده', faNum(s.released))}
           {kpi('نصب‌شده', faNum(s.installed))}
@@ -88,9 +88,9 @@ function Funnel({ f }: { f: SpecialAidFunnel }) {
           <Stage label="دعوت یا نوبت هماهنگ‌شده" value={c.invited} base={c.registered} />
           <Stage label="مشتری مراجعه کرده" value={c.attended} base={c.registered} />
           <Stage label="قطعه نصب شده" value={c.installed} base={c.registered} tone="ok" />
-          {(c.arrivedNotInformed > 0 || c.arrivedOver30NoVisit > 0 || c.releasedNoShow > 0) && <div className="funnel-gaps" role="note">
+          {(c.arrivedNotInformed > 0 || c.pastDeadlineNoVisit > 0 || c.releasedNoShow > 0) && <div className="funnel-gaps" role="note">
             {c.arrivedNotInformed > 0 && <Link href={v('action')}><b>{faNum(c.arrivedNotInformed)}</b> خودرو: قطعه رسیده ولی هنوز به مشتری اطلاع داده نشده</Link>}
-            {c.arrivedOver30NoVisit > 0 && <Link href={v('action')}><b>{faNum(c.arrivedOver30NoVisit)}</b> خودرو: بیش از ۳۰ روز از رسیدن قطعه گذشته و مشتری نیامده</Link>}
+            {c.pastDeadlineNoVisit > 0 && <Link href={v('expired')}><b>{faNum(c.pastDeadlineNoVisit)}</b> خودرو: مهلت ۲۰ روز کاری از رسیدن قطعه تمام شده و مشتری نیامده</Link>}
             {c.releasedNoShow > 0 && <span><b>{faNum(c.releasedNoShow)}</b> خودرو: مشتری نیامد و رزرو آزاد شد</span>}
           </div>}
         </div>

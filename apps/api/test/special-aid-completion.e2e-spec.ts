@@ -143,7 +143,7 @@ it('admission cards: originals with checksum, duplicate and fake files refused, 
   expect((await manager.post('/special-aid/cards', { files: [{ fileName: 'm.png', mime: 'image/png', dataBase64: b64 }] })).status).toBe(403);
 });
 
-it('appointments: imported from the ISACO list, never assumed related, confirmed by the operator; layout recognized next time', async () => {
+it('appointments: imported from the ISACO list, linked automatically (spec 29.3), corrected by the operator; layout recognized next time', async () => {
   const j = toJalaliParts(new Date(Date.now() + 2 * 86_400_000));
   const day = `${j.jy}/${String(j.jm).padStart(2, '0')}/${String(j.jd).padStart(2, '0')}`;
   const header = ['شماره نوبت', 'شماره شاسی', 'تاریخ نوبت', 'ساعت', 'وضعیت', 'نام مشتری', 'موبایل'];
@@ -158,10 +158,18 @@ it('appointments: imported from the ISACO list, never assumed related, confirmed
   expect((await admin.post(`/reference-imports/${prev.id}/apply`, {})).status).toBe(201);
   let d = await detail(operator, (await dossierOf(operator)).id);
   expect(d.appointments).toHaveLength(1);
-  expect(d.appointments[0]).toMatchObject({ appointmentNo: 'N-5001', relation: null, timeText: '10:30' });
-  expect(d.appointmentState).toBe('ambiguous');
+  // The only appointment of the vehicle after a waiting part arrived is linked by Manage, not guessed by a person.
+  expect(d.appointments[0]).toMatchObject({ appointmentNo: 'N-5001', relation: 'related', auto: true, timeText: '10:30' });
+  expect(d.appointmentState).toBe('confirmed');
+  expect((await operator.post('/special-aid/dossiers/search', { view: 'appointed', pageSize: 100 })).body.items.some((r: SpecialAidDossierRow) => r.id === d.id)).toBe(true);
+  // The operator's decision wins over the automatic link, in both directions.
+  const unrel = await operator.post(`/special-aid/dossiers/${d.id}/appointments/${d.appointments[0]!.id}`, { relation: 'unrelated' });
+  expect(unrel.status).toBe(201);
+  expect(unrel.body.appointments[0]).toMatchObject({ relation: 'unrelated', auto: false });
+  expect(unrel.body.appointmentState).toBe('none_recent');
   const rel = await operator.post(`/special-aid/dossiers/${d.id}/appointments/${d.appointments[0]!.id}`, { relation: 'related' });
   expect(rel.status).toBe(201);
+  expect(rel.body.appointments[0]).toMatchObject({ relation: 'related', auto: false });
   expect(rel.body.appointmentState).toBe('confirmed');
   // Re-importing the same list (changed status) updates the appointment without a duplicate.
   rows[1]![4] = 'لغو شده';
