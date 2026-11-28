@@ -26,6 +26,7 @@ export default function SpecialAidReports() {
       {error && <p className="callout callout-red small" role="alert">{errorMessage(error)}</p>}
       {!s && !error && <p className="muted small" role="status">در حال خواندن…</p>}
       {s && <>
+        <FollowUp s={s} />
         <div className="row funnel-range" role="group" aria-label="بازهٔ زمانی قیف">
           <span className="small muted">بازه (روز ثبت امداد):</span>
           {(Object.keys(RANGES) as (keyof typeof RANGES)[]).map((k) => <button key={k} type="button" className={`chip${range === k ? ' active' : ''}`} aria-pressed={range === k} onClick={() => setRange(k)}>{RANGES[k].label}</button>)}
@@ -35,7 +36,6 @@ export default function SpecialAidReports() {
           {kpi('کل درخواست‌ها', faNum(s.total), '/special-aid/vehicles')}
           {kpi('در حال تأمین', faNum(s.pending), '/special-aid/supply')}
           {kpi('رسیده و مصرف‌نشده', faNum(s.arrivedUnused), '/special-aid/vehicles')}
-          {kpi('بیش از ۲۰ روز از رسید', faNum(s.overdue), '/special-aid/vehicles')}
           {kpi('رزرو فعال برای خودرو', faNum(s.reserved))}
           {kpi('رزرو آزادشده', faNum(s.released))}
           {kpi('نصب‌شده', faNum(s.installed))}
@@ -57,6 +57,32 @@ export default function SpecialAidReports() {
         </div></section>
       </>}
     </div>
+  );
+}
+
+/**
+ * Owner, 2026-11-28: yellow and red dossiers and overdue calls beside the funnels. Today's state of the
+ * follow-up (not limited by the funnel period); each number opens the matching vehicles.
+ */
+function FollowUp({ s }: { s: SpecialAidSummary }) {
+  const item = (label: string, value: number, view: string, tone: '' | 'wait' | 'stop', hint: string) => (
+    <Link className="kpi" href={`/special-aid/vehicles?view=${view}`} aria-label={`${label}: ${faNum(value)}`}>
+      <span className="kpi-value">{faNum(value)}</span>
+      <span className="kpi-label">{label}{tone && value > 0 && <> <span className={`m-tag ${tone}`}>{tone === 'stop' ? 'قرمز' : 'زرد'}</span></>}</span>
+      <span className="xs muted">{hint}</span>
+    </Link>
+  );
+  return (
+    <section className="panel" aria-label="مهلت و تماس">
+      <div className="panel-head"><div><h2>مهلت ۲۰ روز کاری و تماس‌ها</h2><p className="small muted">وضعیت امروز؛ هر پرونده با فوری‌ترین قطعهٔ منتظرش شمرده می‌شود.</p></div></div>
+      <div className="panel-body kpis">
+        {item('پرونده‌های زرد', s.deadline.yellow, 'yellow', 'wait', 'روز کاری ۱۱ تا ۱۷ از رسیدن قطعه')}
+        {item('پرونده‌های قرمز', s.deadline.red, 'red', 'stop', 'روز کاری ۱۸ تا ۲۰')}
+        {item('پایان مهلت ۲۰ روز کاری', s.deadline.expired, 'expired', 'stop', 'آماده برای آزادسازی با یک کلیک')}
+        {item('تماس‌های عقب‌افتاده', s.overdueCalls, 'calls_overdue', '', 'تماس ده‌روزه، اطلاع رسیدن یا تماس دوباره که سررسیدش گذشته')}
+        {item('تماس ناموفق', s.contactFailed, 'contact_failed', '', 'دو تماس بی‌پاسخ پشت سر هم')}
+      </div>
+    </section>
   );
 }
 
@@ -88,9 +114,9 @@ function Funnel({ f }: { f: SpecialAidFunnel }) {
           <Stage label="دعوت یا نوبت هماهنگ‌شده" value={c.invited} base={c.registered} />
           <Stage label="مشتری مراجعه کرده" value={c.attended} base={c.registered} />
           <Stage label="قطعه نصب شده" value={c.installed} base={c.registered} tone="ok" />
-          {(c.arrivedNotInformed > 0 || c.arrivedOver30NoVisit > 0 || c.releasedNoShow > 0) && <div className="funnel-gaps" role="note">
+          {(c.arrivedNotInformed > 0 || c.pastDeadlineNoVisit > 0 || c.releasedNoShow > 0) && <div className="funnel-gaps" role="note">
             {c.arrivedNotInformed > 0 && <Link href={v('action')}><b>{faNum(c.arrivedNotInformed)}</b> خودرو: قطعه رسیده ولی هنوز به مشتری اطلاع داده نشده</Link>}
-            {c.arrivedOver30NoVisit > 0 && <Link href={v('action')}><b>{faNum(c.arrivedOver30NoVisit)}</b> خودرو: بیش از ۳۰ روز از رسیدن قطعه گذشته و مشتری نیامده</Link>}
+            {c.pastDeadlineNoVisit > 0 && <Link href={v('expired')}><b>{faNum(c.pastDeadlineNoVisit)}</b> خودرو: مهلت ۲۰ روز کاری از رسیدن قطعه تمام شده و مشتری نیامده</Link>}
             {c.releasedNoShow > 0 && <span><b>{faNum(c.releasedNoShow)}</b> خودرو: مشتری نیامد و رزرو آزاد شد</span>}
           </div>}
         </div>

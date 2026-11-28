@@ -944,6 +944,11 @@ dialog.dialog::backdrop { background: rgba(21, 24, 29, .38); backdrop-filter: bl
 .aid-item-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: #3A4049; }
 .aid-item-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 @media (max-width: 600px) { .aid-item { grid-template-columns: minmax(0, 1fr); } .aid-item-actions { justify-content: flex-start; } }
+/* «کارهای امروز» of special aid: the reception list row; on phones the task and its one-click actions use the full width. */
+@media (max-width: 760px) {
+  .rcp-row.aid-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'plate' 'who' 'status' 'meta'; }
+  .rcp-row.aid-row .rcp-meta { justify-content: flex-start; }
+}
 /* Notification center (spec section 25): same paper popover as the account menu. */
 .notice-center { position: relative; }
 .notice-panel { position: absolute; inset-block-start: calc(100% + 8px); inset-inline-end: 0; z-index: 30; inline-size: min(420px, calc(100vw - 32px)); max-block-size: min(70vh, 560px); overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 16px; background: #FFFEFB; border: 1px solid #E6E2D9; box-shadow: 0 24px 48px -24px rgba(21, 24, 29, .35); color: #15181D; }

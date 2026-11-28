@@ -96,22 +96,25 @@ it('re-publishing the same report creates no duplicate dossier, admission, part 
   expect((await detail(operator, full.id)).items.find((i) => i.emdadNo === '0081003')!.state).toBe('pending');
 });
 
-it('today lists the unannounced arrival; three failed days notify management; an answer records the announcement', async () => {
+it('today lists the unannounced arrival; two unanswered calls are a failed contact told to management once; an answer records the announcement', async () => {
   const today = (await operator.get('/special-aid/today')).body as SpecialAidTodayEntry[];
   const mine = today.find((t) => t.dossier.vin === VIN)!;
-  expect(mine.tasks[0]).toMatchObject({ kind: 'inform_arrival', urgent: true });
+  expect(mine.tasks.find((t) => t.kind === 'inform_arrival')).toMatchObject({ urgent: true, section: 'invite' });
   let d = await detail(operator, mine.dossier.id);
   const x = d.items.find((i) => i.emdadNo === '0081001')!;
-  // Two earlier failed days (synthetic history), then today's attempt.
+  // One earlier unanswered call (synthetic history), then today's attempt: the second in a row.
   const opUser = (await h.db.db.select({ id: users.id, tenantId: users.tenantId }).from(users).where(eq(users.username, 'sa-operator')))[0]!;
-  for (const daysBack of [2, 1]) await h.db.db.insert(specialAidContacts).values({ id: newId(), tenantId: opUser.tenantId, dossierId: d.id, outcome: 'no_answer', itemIds: [x.id], createdBy: opUser.id, createdAt: new Date(Date.now() - daysBack * 86_400_000), isTest: true });
+  await h.db.db.insert(specialAidContacts).values({ id: newId(), tenantId: opUser.tenantId, dossierId: d.id, outcome: 'no_answer', itemIds: [x.id], createdBy: opUser.id, createdAt: new Date(Date.now() - 86_400_000), isTest: true });
   const r = await operator.post(`/special-aid/dossiers/${d.id}/contacts`, { outcome: 'no_answer', itemIds: [x.id], expectedVersion: d.version });
   expect(r.status).toBe(201);
-  expect(r.body.failedAttemptDays).toBe(3);
-  expect(r.body.tasks.some((t: { kind: string }) => t.kind === 'escalation')).toBe(true);
+  expect(r.body).toMatchObject({ unansweredStreak: 2, contactFailed: true, failedAttemptDays: 2 });
+  // After a failed contact no daily retry is asked for.
+  expect(r.body.tasks.some((t: { kind: string }) => t.kind === 'no_answer_retry' || t.kind === 'inform_arrival')).toBe(false);
   const mgr = (await h.db.db.select({ id: users.id }).from(users).where(eq(users.username, 'sa-manager')))[0]!;
   const notes = await h.db.db.select().from(notifications).where(and(eq(notifications.userId, mgr.id), eq(notifications.kind, 'special_aid.escalation')));
   expect(notes).toHaveLength(1);
+  expect(notes[0]!.title).toContain('تماس ناموفق');
+  expect((await operator.post('/special-aid/dossiers/search', { view: 'contact_failed', pageSize: 100 })).body.items.some((row: SpecialAidDossierRow) => row.id === d.id)).toBe(true);
   // The same streak never notifies twice.
   d = r.body;
   await operator.post(`/special-aid/dossiers/${d.id}/contacts`, { outcome: 'no_answer', itemIds: [x.id], expectedVersion: d.version });
@@ -120,7 +123,7 @@ it('today lists the unannounced arrival; three failed days notify management; an
   const ok = await operator.post(`/special-aid/dossiers/${d.id}/contacts`, { outcome: 'answered', itemIds: [x.id], note: 'مشتری فردا می‌آید', expectedVersion: d.version });
   expect(ok.status).toBe(201);
   expect(ok.body.items.find((i: { id: string }) => i.id === x.id).informedAt).toBeTruthy();
-  expect(ok.body.failedAttemptDays).toBe(0);
+  expect(ok.body).toMatchObject({ failedAttemptDays: 0, unansweredStreak: 0, contactFailed: false });
   // A stale version is rejected.
   expect((await operator.post(`/special-aid/dossiers/${d.id}/contacts`, { outcome: 'answered', itemIds: [x.id], expectedVersion: d.version })).status).toBe(409);
 });

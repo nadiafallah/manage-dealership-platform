@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  allowedItemActions, arrivalAge, dossierTasks, failedAttemptDays, nextItemState, permissionsFor, tehranDay,
+  allowedItemActions, arrivalAge, dossierTasks, failedAttemptDays, isContactFailed, nextItemState, permissionsFor, tehranDay, unansweredStreak,
   type AidContactFacts, type AidItemFacts, contactSchema, itemActionSchema, nonConsumptionSchema,
 } from '../index';
 
@@ -17,6 +17,8 @@ test('the state machine never marks a part installed because it left the warehou
   assert.equal(nextItemState('delivered', 'installed'), 'installed');
   assert.equal(nextItemState('pending', 'reserve'), null);
   assert.equal(nextItemState('installed', 'release'), null);
+  // An arrived part that Manage could not hold can still be released for another customer.
+  assert.equal(nextItemState('arrived', 'release'), 'released');
   assert.deepEqual(allowedItemActions('not_installed').sort(), ['release', 'return_to_stock_hold']);
 });
 
@@ -28,18 +30,23 @@ test('an arrived part not announced is the most urgent contact task, grouped per
   assert.equal(inform.urgent, true);
 });
 
-test('a no-answer is retried on another day; three separate days escalate to management', () => {
+test('a no-answer is retried on another working day; two unanswered calls make a failed contact (spec 29.5)', () => {
   const sameDay = dossierTasks({ items: [item()], contacts: [call(days(0), 'no_answer')] }, now);
   assert.ok(!sameDay.some((x) => x.kind === 'no_answer_retry' || x.kind === 'inform_arrival'), 'no second attempt is asked for on the same day');
   const nextDay = dossierTasks({ items: [item({ receivedAt: days(3) })], contacts: [call(days(1), 'no_answer')] }, now);
   assert.ok(nextDay.some((x) => x.kind === 'no_answer_retry'));
-  // Two attempts the same day count once.
-  assert.equal(failedAttemptDays([call(days(2), 'no_answer'), call(new Date(Date.parse(days(2)) + 3600_000).toISOString(), 'no_answer'), call(days(1), 'no_answer')]), 2);
-  const three = [call(days(3), 'no_answer'), call(days(2), 'no_answer'), call(days(1), 'no_answer')];
-  assert.equal(failedAttemptDays(three), 3);
-  assert.ok(dossierTasks({ items: [item({ receivedAt: days(4) })], contacts: three }, now).some((x) => x.kind === 'escalation' && x.urgent));
+  // Two attempts the same day count once as days, twice as calls.
+  const twice = [call(days(2), 'no_answer'), call(new Date(Date.parse(days(2)) + 3600_000).toISOString(), 'no_answer')];
+  assert.equal(failedAttemptDays([...twice, call(days(1), 'no_answer')]), 2);
+  assert.equal(unansweredStreak(twice), 2);
+  assert.equal(isContactFailed(twice), true);
+  assert.equal(isContactFailed([call(days(2), 'no_answer')]), false);
+  // After a failed contact no daily retry is asked for; only the ten-day call remains.
+  const failed = dossierTasks({ items: [item({ receivedAt: days(4) })], contacts: [call(days(3), 'no_answer'), call(days(2), 'no_answer')] }, now);
+  assert.ok(!failed.some((x) => x.kind === 'no_answer_retry' || x.kind === 'inform_arrival'));
   // A reached contact resets the streak.
-  assert.equal(failedAttemptDays([...three, call(days(0), 'answered')]), 0);
+  assert.equal(unansweredStreak([...twice, call(days(0), 'answered')]), 0);
+  assert.equal(failedAttemptDays([...twice, call(days(0), 'answered')]), 0);
 });
 
 test('informed parts get a recurring call every ten days', () => {
@@ -48,17 +55,15 @@ test('informed parts get a recurring call every ten days', () => {
   assert.ok(!dossierTasks({ items: [informed], contacts: [call(days(9), 'answered')] }, now).some((x) => x.kind === 'recurring_contact'));
 });
 
-test('20/30-day flags come from the official receipt date and never move with a postponement', () => {
-  const old = item({ informedAt: days(25), receivedAt: days(31), arrivalObservedAt: days(2) });
+test('the 20-working-day flags come from the official receipt date and never move with a postponement', () => {
+  // 2026-10-20 → 2026-11-22: 29 working days (Fridays off) → expired.
+  const old = item({ informedAt: days(25), receivedAt: '2026-10-20T08:00:00Z', arrivalObservedAt: days(2) });
   const t = dossierTasks({ items: [old], contacts: [call(days(5), 'answered')], postponedUntil: days(-5) }, now);
-  const review = t.find((x) => x.kind === 'age_review');
-  assert.ok(review && review.urgent && !review.postponed, 'age review is never postponed');
-  assert.equal(arrivalAge(old, now), 31);
+  const expired = t.find((x) => x.kind === 'deadline_expired');
+  assert.ok(expired && expired.urgent && !expired.postponed && expired.section === 'deadline', 'a deadline is never postponed');
+  assert.equal(arrivalAge(old, now), 33);
   // Without the official date the first observation is used.
   assert.equal(arrivalAge(item({ receivedAt: null, arrivalObservedAt: days(21) }), now), 21);
-  const warn = dossierTasks({ items: [item({ receivedAt: days(21), informedAt: days(20) })], contacts: [call(days(2), 'answered')] }, now);
-  assert.ok(warn.some((x) => x.kind === 'age_warning'));
-  assert.ok(dossierTasks({ items: [item({ receivedAt: days(18), informedAt: days(17) })], contacts: [call(days(2), 'answered')] }, now).some((x) => x.kind === 'age_approaching'));
 });
 
 test('a postponement hides contact tasks but keeps their original deadline', () => {

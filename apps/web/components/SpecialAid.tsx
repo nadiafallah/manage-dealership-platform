@@ -3,8 +3,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
-  CONTACT_OUTCOMES, CONTACT_OUTCOME_LABELS, SPECIAL_AID_ITEM_STATE_LABELS, toPersianDigits,
-  type ContactOutcome, type SpecialAidDossier, type SpecialAidDossierRow, type SpecialAidItem, type SpecialAidItemState, type SpecialAidTask,
+  AID_DEADLINE_LABELS, CONTACT_OUTCOMES, CONTACT_OUTCOME_LABELS, DEADLINE_RELEASE_REASON, SPECIAL_AID_ITEM_STATE_LABELS, SPECIAL_AID_RULES, toPersianDigits,
+  type AidDeadline, type ContactOutcome, type SpecialAidDossier, type SpecialAidDossierRow, type SpecialAidItem, type SpecialAidItemState, type SpecialAidReleasable, type SpecialAidTask,
 } from '@manage/shared';
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -58,6 +58,49 @@ export function VinText({ vin }: { vin: string }) {
 
 const taskTone = (t: SpecialAidTask | null) => (!t ? 'ok' : t.urgent || t.overdue ? 'stop' : 'warn');
 
+/**
+ * The 20-working-day deadline of a part or a dossier (spec 29.4): yellow from working day 11, red from
+ * day 18, expired after day 20. The existing tag colours (amber, red); no new palette.
+ */
+export function DeadlineTag({ deadline, compact }: { deadline: AidDeadline | null | undefined; compact?: boolean }) {
+  if (!deadline) return null;
+  const R = SPECIAL_AID_RULES;
+  const tone = deadline.level === 'expired' || deadline.level === 'red' ? 'stop' : deadline.level === 'yellow' ? 'wait' : 'mute';
+  const text = deadline.level === 'expired' ? AID_DEADLINE_LABELS.expired
+    : `${deadline.level === 'red' ? 'قرمز · ' : deadline.level === 'yellow' ? 'زرد · ' : ''}روز کاری ${faNum(deadline.day)} از ${faNum(R.deadlineWorkingDays)}${compact ? '' : deadline.remaining ? ` · ${faNum(deadline.remaining)} روز کاری مانده` : ' · امروز آخرین روز مهلت'}`;
+  return <span className={`m-tag ${tone}`} data-deadline={deadline.level} title={`پایان مهلت: ${formatJalali(deadline.endsAt)}${deadline.official ? '' : ' (از نخستین مشاهدهٔ رسید در منیج)'}`}>{text}</span>;
+}
+
+/** Short vehicle name; the full ISACO model opens with one click (lists show only the short name). */
+export function VehicleName({ model, fullModel, as: Tag = 'strong' }: { model: string | null; fullModel?: string | null; as?: 'strong' | 'h1' }) {
+  const short = model ?? 'خودرو';
+  return (
+    <>
+      <Tag className="folder-car">{short}</Tag>
+      {fullModel && fullModel !== model && <details className="vehicle-spec no-print"><summary>مدل کامل</summary><p>{toPersianDigits(fullModel)}</p></details>}
+    </>
+  );
+}
+
+/**
+ * One click at the end of the deadline (spec 29.2): the part is released for another customer by a
+ * person with the release permission; the reason, name and time are recorded. Never automatic.
+ */
+export function ReleaseNowButton({ part, onDone }: { part: Pick<SpecialAidReleasable, 'id' | 'version' | 'description' | 'code'>; onDone: (d: SpecialAidDossier | null) => void }) {
+  const toast = useToast();
+  const { can } = useAuth();
+  const [busy, setBusy] = useState(false);
+  if (!can('special_aid.release')) return null;
+  async function release() {
+    setBusy(true);
+    try {
+      const d = await api<SpecialAidDossier>(`/special-aid/items/${part.id}/action`, { body: { action: 'release', reason: DEADLINE_RELEASE_REASON, expectedVersion: part.version } });
+      toast('قطعه برای مشتری دیگر آزاد شد؛ با نام شما در سابقه ثبت شد', 'ok'); onDone(d);
+    } catch (e) { toast(errorMessage(e), 'error'); onDone(null); } finally { setBusy(false); }
+  }
+  return <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void release()} aria-label={`آزاد کردن ${part.description ?? 'قطعه'} برای مشتری دیگر`}>آزاد کردن برای مشتری دیگر</button>;
+}
+
 /** A vehicle of the module as the familiar case folder: plate, customer, counts and one next step. */
 export function DossierFolder({ d }: { d: SpecialAidDossierRow }) {
   const car = d.vehicle.model ?? 'خودرو';
@@ -66,7 +109,7 @@ export function DossierFolder({ d }: { d: SpecialAidDossierRow }) {
       <span className="folder-tab" aria-hidden="true" />
       <div className="folder-top">
         <div className="folder-who">
-          <strong className="folder-car">{car}</strong>
+          <VehicleName model={d.vehicle.model} fullModel={d.vehicle.fullModel} />
           <span className="folder-cust">{d.vehicle.customerName ?? 'مشتری در سوابق پذیرش نیست'}</span>
         </div>
         <Plate value={d.vehicle.plate} size="xl" />
@@ -76,6 +119,8 @@ export function DossierFolder({ d }: { d: SpecialAidDossierRow }) {
         <span className="cnt cnt-ok">رسیده {faNum(d.arrived)}</span>
         <span className="cnt">در حال تأمین {faNum(d.pending)}</span>
         {d.actionCount > 0 && <span className={`cnt ${d.urgent ? 'cnt-stop' : 'cnt-warn'}`}>نیازمند اقدام {faNum(d.actionCount)}</span>}
+        <DeadlineTag deadline={d.deadline} compact />
+        {d.contactFailed && <span className="m-tag stop">تماس ناموفق</span>}
       </div>
       <p className={`folder-next tone-${taskTone(d.nextTask)}`}><span>قدم بعدی:</span> {d.nextTask ? d.nextTask.label : 'فعلاً کاری منتظر نیست.'}</p>
       <Link href={`/special-aid/vehicles/${d.id}`} className="folder-open"><AppIcon name="login" />باز کردن پرونده</Link>
@@ -116,13 +161,13 @@ export function ContactDialog({ dossier, open, onClose, onSaved, preselect }: { 
         </fieldset>}
         {needsDate && <JalaliInput label={outcome === 'promised_visit' ? 'روز قول مراجعه' : 'روز نوبت هماهنگ‌شده (اختیاری)'} value={promisedAt} onChange={setPromisedAt} />}
         <label className="field"><span>یادداشت (اختیاری)</span><textarea className="input" rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></label>
-        <p className="xs muted">زمان، نام شما و نتیجه خودکار ثبت می‌شود. «پاسخ نداد» در همین روز تکرار نمی‌خواهد؛ سه روز جدای بی‌پاسخ به مدیریت اعلام می‌شود.</p>
+        <p className="xs muted">زمان، نام شما و نتیجه خودکار ثبت می‌شود. «پاسخ نداد» در همین روز تکرار نمی‌خواهد؛ دو تماس بی‌پاسخ پشت سر هم «تماس ناموفق» است و به مدیریت اعلام می‌شود. تماس بعدی ده روز بعد یادآوری می‌شود.</p>
       </div>
     </Dialog>
   );
 }
 
-/** Moves the next call only; the original deadline and the 20/30-day flags stay as they are. */
+/** Moves the next call only; the original deadline and the 20-working-day deadline stay as they are. */
 export function PostponeDialog({ dossier, open, onClose, onSaved }: { dossier: SpecialAidDossier; open: boolean; onClose: () => void; onSaved: (d: SpecialAidDossier) => void }) {
   const toast = useToast();
   const [until, setUntil] = useState<string | null>(null);
@@ -139,10 +184,34 @@ export function PostponeDialog({ dossier, open, onClose, onSaved }: { dossier: S
       <div className="stack">
         <JalaliInput label="پیگیری بعدی از" value={until} onChange={setUntil} required />
         <label className="field"><span>علت</span><input className="input" maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
-        <p className="xs muted">مهلت اصلی اطلاع‌رسانی و هشدار ۲۰ و ۳۰ روزه با تعویق جابه‌جا نمی‌شوند.</p>
+        <p className="xs muted">مهلت اصلی اطلاع‌رسانی و مهلت ۲۰ روز کاری از رسیدن قطعه با تعویق جابه‌جا نمی‌شوند.</p>
       </div>
     </Dialog>
   );
 }
 
 export const dayText = (iso: string | null) => (iso ? formatJalali(iso) : '—');
+
+/**
+ * One-click call log from «کارهای امروز» (scenario S26): «پاسخ داد» or «پاسخ نداد» for the parts of the
+ * task; time and name are recorded by the server. Other outcomes are recorded in the dossier.
+ */
+export function QuickCall({ dossier, itemIds, onSaved }: { dossier: Pick<SpecialAidDossierRow, 'id' | 'version'>; itemIds: string[]; onSaved: () => void }) {
+  const toast = useToast();
+  const { can } = useAuth();
+  const [busy, setBusy] = useState(false);
+  if (!can('special_aid.operate') || !itemIds.length) return null;
+  async function save(outcome: ContactOutcome) {
+    setBusy(true);
+    try {
+      const d = await api<SpecialAidDossier>(`/special-aid/dossiers/${dossier.id}/contacts`, { body: { outcome, itemIds, expectedVersion: dossier.version } });
+      toast(d.contactFailed ? 'دو تماس بی‌پاسخ: تماس ناموفق ثبت و به مدیریت اعلام شد' : `ثبت شد: ${CONTACT_OUTCOME_LABELS[outcome]}`, d.contactFailed ? 'error' : 'ok');
+    } catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(false); onSaved(); }
+  }
+  return (
+    <span className="row no-print" role="group" aria-label="ثبت سریع تماس">
+      <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void save('answered')}>پاسخ داد</button>
+      <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void save('no_answer')}>پاسخ نداد</button>
+    </span>
+  );
+}

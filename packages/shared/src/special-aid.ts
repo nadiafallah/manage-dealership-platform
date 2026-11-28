@@ -27,8 +27,8 @@ export const SPECIAL_AID_FINAL_STATES: readonly SpecialAidItemState[] = ['instal
 
 /**
  * Operator actions on a part line. Only the listed transitions exist; the API enforces them.
- * Release needs `special_aid.release`; recording a non-consumption reason is separate and
- * never releases anything.
+ * Release needs `special_aid.release` and a reason (one click at the end of the deadline records
+ * `DEADLINE_RELEASE_REASON`); recording a non-consumption reason is separate and never releases anything.
  */
 export const SPECIAL_AID_ACTIONS = ['reserve', 'deliver', 'await_installation', 'installed', 'not_installed', 'return_to_stock_hold', 'release'] as const;
 export type SpecialAidAction = (typeof SPECIAL_AID_ACTIONS)[number];
@@ -43,7 +43,9 @@ export const SPECIAL_AID_ACTION_LABELS: Record<SpecialAidAction, string> = {
 };
 const TRANSITIONS: Record<SpecialAidItemState, Partial<Record<SpecialAidAction, SpecialAidItemState>>> = {
   pending: {},
-  arrived: { reserve: 'reserved' },
+  // An arrived part not yet held in Manage can still be released for another customer (e.g. at the end of
+  // the 20-working-day deadline); there is no hold to free, the follow-up of this vehicle ends.
+  arrived: { reserve: 'reserved', release: 'released' },
   reserved: { deliver: 'delivered', release: 'released' },
   delivered: { await_installation: 'installation_pending', installed: 'installed', not_installed: 'not_installed' },
   installation_pending: { installed: 'installed', not_installed: 'not_installed' },
@@ -97,19 +99,24 @@ export const CONTACT_OUTCOME_LABELS: Record<ContactOutcome, string> = {
 export const UNREACHED_OUTCOMES: readonly ContactOutcome[] = ['no_answer', 'switched_off', 'wrong_number'];
 export const isUnreached = (o: ContactOutcome | string) => (UNREACHED_OUTCOMES as readonly string[]).includes(o);
 
-/** Follow-up rules (owner, 2026-11-22). Calendar days on the Tehran calendar. */
+/**
+ * Follow-up rules. Owner decisions for the reconstruction (spec 29.4 and 29.5) and the special-aid
+ * mission of 2026-11-28: the deadline is 20 WORKING days from the arrival of the part (yellow from
+ * working day 11, red from working day 18), two unanswered calls make a failed contact, and the
+ * customer is called every ten days from the registration of the request, before and after arrival.
+ */
 export const SPECIAL_AID_RULES = {
   /** An arrived part is announced to the customer by the end of the next WORKING day (owner, 2026-11-22). */
   informWithinDays: 1,
-  /** Repeat the call every ten days while the part waits for the vehicle. */
+  /** A call every ten (calendar) days from the registration of the request; a due day off moves to the next working day. */
   recurringContactDays: 10,
-  /** Warning and human review thresholds from the warehouse receipt. */
-  warnDays: 20,
-  reviewDays: 30,
-  /** The approaching window shown before each threshold. */
-  approachDays: 3,
-  /** No-answer attempts on separate days before management is told. */
-  failedAttemptsEscalation: 3,
+  /** Deadline from the arrival of the part, in working days of the dealership calendar (spec 29.4). */
+  deadlineWorkingDays: 20,
+  /** Working day of the deadline from which the dossier is yellow, and red (spec 29.4). */
+  yellowFromDay: 11,
+  redFromDay: 18,
+  /** Unanswered calls in a row that make a failed contact (spec 29.5; replaces «three attempts on three days»). */
+  failedAfterUnanswered: 2,
 } as const;
 
 const DAY = 86_400_000;
@@ -124,6 +131,12 @@ export function daysBetween(a: Date | string, b: Date | string): number {
 export function tehranDayStart(d: Date | string, days = 0): Date {
   return new Date(Date.parse(tehranDay(d)) + days * DAY - OFFSET);
 }
+/** The calendar day (YYYY-MM-DD) `n` days after a day key. */
+const addDays = (day: string, n = 1) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+/** Last instant of a Tehran day given as a day key. */
+const endOfDayKey = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + DAY - OFFSET - 1);
+/** First instant of a Tehran day given as a day key. */
+const startOfDayKey = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - OFFSET);
 
 export interface AidItemFacts {
   id: string;
@@ -135,6 +148,8 @@ export interface AidItemFacts {
   informedAt: string | null;
   groupId: string | null;
   officialCancelled?: boolean;
+  /** Official registration date of the special-aid request («تاریخ ثبت امداد ویژه»), when the report has it. */
+  registeredAt?: string | null;
 }
 export interface AidContactFacts { at: string; outcome: ContactOutcome; promisedAt?: string | null; itemIds: readonly string[] }
 export interface AidGroupFacts { id: string; decision: 'wait' | 'partial' | null }
@@ -159,28 +174,109 @@ export function endOfNextWorkingDay(at: Date | string, isWorkingDay: (day: strin
   }
   return new Date(tehranDayStart(at, 2).getTime() - 1);
 }
+/** Start of the first working day on or after the Tehran day of the instant (the instant itself when that day works). */
+export function onWorkingDay(at: Date | string, isWorkingDay: (day: string) => boolean = defaultWorkingDay): Date {
+  const first = tehranDay(at);
+  let day = first;
+  for (let n = 0; n < 60 && !isWorkingDay(day); n++) day = addDays(day);
+  return day === first ? new Date(at) : startOfDayKey(day);
+}
+/** Start of the next working day after the instant's Tehran day (a retry belongs to another day). */
+export const nextWorkingDayStart = (at: Date | string, isWorkingDay: (day: string) => boolean = defaultWorkingDay) => onWorkingDay(tehranDayStart(at, 1), isWorkingDay);
 
-export const SPECIAL_AID_TASK_KINDS = ['age_review', 'escalation', 'inform_arrival', 'promised_visit', 'no_answer_retry', 'recurring_contact', 'age_warning', 'age_approaching', 'group_decision'] as const;
+// ------------------------------------------------------------------ the 20-working-day deadline
+
+export const AID_DEADLINE_LEVELS = ['ok', 'yellow', 'red', 'expired'] as const;
+export type AidDeadlineLevel = (typeof AID_DEADLINE_LEVELS)[number];
+export const AID_DEADLINE_LABELS: Record<AidDeadlineLevel, string> = {
+  ok: 'در مهلت ۲۰ روز کاری',
+  yellow: 'زرد: از روز کاری ۱۱',
+  red: 'قرمز: از روز کاری ۱۸',
+  expired: 'مهلت ۲۰ روز کاری تمام شد',
+};
+/** States in which an arrived part still waits for its vehicle: the deadline clock runs only for these. */
+export const SPECIAL_AID_WAITING_STATES: readonly SpecialAidItemState[] = ['arrived', 'reserved', 'not_installed'];
+export interface AidDeadline {
+  /** Working days after the arrival day up to today (the arrival day is day 0; counting stops after the deadline). */
+  day: number;
+  /** Working days left (0 on the last day of the deadline and after it). */
+  remaining: number;
+  level: AidDeadlineLevel;
+  /** Last instant (Tehran) of the 20th working day after the arrival day. */
+  endsAt: string;
+  /** Start of the clock: the official warehouse receipt, otherwise Manage's first observation (labelled). */
+  from: string;
+  official: boolean;
+}
+
+/**
+ * Deadline of one arrived part (spec 29.4): 20 working days of the dealership calendar from the
+ * arrival day; yellow from working day 11, red from working day 18, expired once the 20th working
+ * day has ended. Only a part that still waits for its vehicle has a deadline; nothing is invented
+ * without an arrival date or for a calendar without working days.
+ */
+export function aidDeadline(i: Pick<AidItemFacts, 'state' | 'receivedAt' | 'arrivalObservedAt' | 'officialCancelled'>, now: Date, isWorkingDay: (day: string) => boolean = defaultWorkingDay): AidDeadline | null {
+  if (i.officialCancelled || !SPECIAL_AID_WAITING_STATES.includes(i.state)) return null;
+  const { at, official } = arrivalOf(i);
+  if (!at) return null;
+  const R = SPECIAL_AID_RULES;
+  const start = tehranDay(at);
+  const today = tehranDay(now);
+  let end: string | null = null;
+  for (let d = start, counted = 0, n = 0; n < 3660; n++) {
+    d = addDays(d);
+    if (isWorkingDay(d) && ++counted === R.deadlineWorkingDays) { end = d; break; }
+  }
+  if (!end) return null;
+  let day = 0;
+  for (let d = addDays(start), n = 0; n < 3660 && d <= today && day <= R.deadlineWorkingDays; n++, d = addDays(d)) if (isWorkingDay(d)) day += 1;
+  const endsAt = endOfDayKey(end);
+  const level: AidDeadlineLevel = now.getTime() > endsAt.getTime() ? 'expired' : day >= R.redFromDay ? 'red' : day >= R.yellowFromDay ? 'yellow' : 'ok';
+  return { day, remaining: Math.max(0, R.deadlineWorkingDays - day), level, endsAt: endsAt.toISOString(), from: at, official };
+}
+const LEVEL_RANK: Record<AidDeadlineLevel, number> = { ok: 0, yellow: 1, red: 2, expired: 3 };
+/** The most urgent deadline of several parts (the dossier's colour). */
+export function worstDeadline(list: readonly (AidDeadline | null | undefined)[]): AidDeadline | null {
+  return [...list].filter((x): x is AidDeadline => !!x).sort((a, b) => LEVEL_RANK[b.level] - LEVEL_RANK[a.level] || a.endsAt.localeCompare(b.endsAt))[0] ?? null;
+}
+
+// ------------------------------------------------------------------ today's work of one vehicle
+
+export const SPECIAL_AID_TASK_KINDS = ['deadline_expired', 'inform_arrival', 'deadline_red', 'promised_visit', 'no_answer_retry', 'recurring_contact', 'deadline_yellow', 'group_decision'] as const;
 export type SpecialAidTaskKind = (typeof SPECIAL_AID_TASK_KINDS)[number];
 export const SPECIAL_AID_TASK_LABELS: Record<SpecialAidTaskKind, string> = {
-  age_review: 'بیش از ۳۰ روز از رسید؛ بررسی انسانی لازم است',
-  escalation: 'سه تماس بی‌پاسخ در سه روز جدا؛ به مدیریت اعلام شد',
+  deadline_expired: 'مهلت ۲۰ روز کاری تمام شد؛ قطعه را برای مشتری دیگر آزاد کنید یا تعیین تکلیف کنید',
   inform_arrival: 'قطعه رسیده و مشتری هنوز خبر ندارد',
+  deadline_red: 'قرمز: روز کاری ۱۸ به بعد از مهلت ۲۰ روزه',
   promised_visit: 'روز قول مراجعهٔ مشتری',
   no_answer_retry: 'تماس دوباره پس از بی‌پاسخ',
-  recurring_contact: 'تماس دوره‌ای ده‌روزه',
-  age_warning: 'بیش از ۲۰ روز از رسید',
-  age_approaching: 'نزدیک به مهلت ۲۰ یا ۳۰ روز',
+  recurring_contact: 'تماس ده‌روزه: وضعیت قطعه را به مشتری بگویید',
+  deadline_yellow: 'زرد: روز کاری ۱۱ به بعد از مهلت ۲۰ روزه',
   group_decision: 'بخشی از قطعات مرتبط رسیده؛ انتظار یا تعمیر بخشی؟',
+};
+/** The three parts of «کارهای امروز» (owner, 2026-11-28). */
+export const SPECIAL_AID_TASK_SECTIONS = ['calls', 'invite', 'deadline'] as const;
+export type SpecialAidTaskSection = (typeof SPECIAL_AID_TASK_SECTIONS)[number];
+export const SPECIAL_AID_TASK_SECTION_LABELS: Record<SpecialAidTaskSection, string> = {
+  calls: 'تماس‌های سررسیده',
+  invite: 'قطعه‌های تازه‌رسیده برای دعوت',
+  deadline: 'پرونده‌های زرد و قرمز',
+};
+export const SPECIAL_AID_TASK_SECTION_OF: Record<SpecialAidTaskKind, SpecialAidTaskSection> = {
+  deadline_expired: 'deadline', deadline_red: 'deadline', deadline_yellow: 'deadline',
+  inform_arrival: 'invite', group_decision: 'invite',
+  promised_visit: 'calls', no_answer_retry: 'calls', recurring_contact: 'calls',
 };
 /** Lower is more urgent. */
 const PRIORITY: Record<SpecialAidTaskKind, number> = Object.fromEntries(SPECIAL_AID_TASK_KINDS.map((k, i) => [k, i])) as Record<SpecialAidTaskKind, number>;
-/** Contact tasks are hidden while a follow-up is postponed; deadlines and age flags never move. */
+/** Contact tasks are hidden while a follow-up is postponed; deadlines never move. */
 const CONTACT_TASKS: readonly SpecialAidTaskKind[] = ['inform_arrival', 'promised_visit', 'no_answer_retry', 'recurring_contact', 'group_decision'];
 
 export interface SpecialAidTask {
   kind: SpecialAidTaskKind;
   label: string;
+  /** Part of «کارهای امروز» the task belongs to. */
+  section: SpecialAidTaskSection;
   /** Original compliance deadline (never moved by a postponement). */
   dueAt: string;
   overdue: boolean;
@@ -194,34 +290,47 @@ export function arrivalOf(i: Pick<AidItemFacts, 'receivedAt' | 'arrivalObservedA
   if (i.receivedAt) return { at: i.receivedAt, official: true };
   return { at: i.arrivalObservedAt, official: false };
 }
+/** Calendar days since arrival (shown as information; the deadline itself counts working days). */
 export function arrivalAge(i: Pick<AidItemFacts, 'receivedAt' | 'arrivalObservedAt'>, now: Date): number | null {
   const a = arrivalOf(i).at;
   return a ? Math.max(0, daysBetween(a, now)) : null;
 }
 const isArrived = (s: SpecialAidItemState) => s !== 'pending';
-const isOpen = (i: AidItemFacts) => isArrived(i.state) && !SPECIAL_AID_FINAL_STATES.includes(i.state) && !i.officialCancelled;
+const isLive = (i: AidItemFacts) => !SPECIAL_AID_FINAL_STATES.includes(i.state) && !i.officialCancelled;
+const byTime = <T extends { at: string }>(list: readonly T[]) => [...list].sort((a, b) => a.at.localeCompare(b.at));
 
-/** Distinct Tehran days with a no-answer attempt since the latest reached contact. */
+/** Distinct Tehran days with a no-answer attempt since the latest reached contact (shown on the dossier). */
 export function failedAttemptDays(contacts: readonly AidContactFacts[]): number {
-  const sorted = [...contacts].sort((a, b) => a.at.localeCompare(b.at));
+  const sorted = byTime(contacts);
   const lastReached = sorted.reduce((acc, c, i) => (!isUnreached(c.outcome) ? i : acc), -1);
   return new Set(sorted.slice(lastReached + 1).filter((c) => isUnreached(c.outcome)).map((c) => tehranDay(c.at))).size;
 }
+/** Unanswered calls in a row since the latest reached contact. */
+export function unansweredStreak(contacts: readonly Pick<AidContactFacts, 'at' | 'outcome'>[]): number {
+  let n = 0;
+  for (const c of byTime(contacts)) n = isUnreached(c.outcome) ? n + 1 : 0;
+  return n;
+}
+/** «تماس ناموفق» (spec 29.5): two unanswered calls in a row; a reached call ends it. */
+export const isContactFailed = (contacts: readonly Pick<AidContactFacts, 'at' | 'outcome'>[]) => unansweredStreak(contacts) >= SPECIAL_AID_RULES.failedAfterUnanswered;
 
 /**
  * Today's follow-up work of one vehicle, most urgent first. Customer calls are grouped per
  * vehicle (one task lists every part it covers); part-level history stays on the parts.
  */
 export function dossierTasks(d: AidDossierFacts, now: Date): SpecialAidTask[] {
+  const R = SPECIAL_AID_RULES;
   const out: SpecialAidTask[] = [];
   const nowIso = now.toISOString();
   const today = tehranDay(now);
+  const working = d.isWorkingDay ?? defaultWorkingDay;
   const postponed = !!d.postponedUntil && d.postponedUntil > nowIso;
   const add = (kind: SpecialAidTaskKind, dueAt: Date | string, itemIds: string[], urgent = false) => {
     const due = new Date(dueAt).toISOString();
-    out.push({ kind, label: SPECIAL_AID_TASK_LABELS[kind], dueAt: due, overdue: tehranDay(due) < today, urgent, itemIds, postponed: postponed && CONTACT_TASKS.includes(kind) });
+    out.push({ kind, label: SPECIAL_AID_TASK_LABELS[kind], section: SPECIAL_AID_TASK_SECTION_OF[kind], dueAt: due, overdue: tehranDay(due) < today, urgent, itemIds, postponed: postponed && CONTACT_TASKS.includes(kind) });
   };
-  const open = d.items.filter(isOpen);
+  const live = d.items.filter(isLive);
+  const open = live.filter((i) => isArrived(i.state));
   const groups = new Map((d.groups ?? []).map((g) => [g.id, g]));
   const waitingGroup = (i: AidItemFacts) => {
     if (!i.groupId) return false;
@@ -229,63 +338,58 @@ export function dossierTasks(d: AidDossierFacts, now: Date): SpecialAidTask[] {
     const partial = members.some((x) => x.state === 'pending');
     return partial && groups.get(i.groupId)?.decision !== 'partial';
   };
+  const sorted = byTime(d.contacts);
 
-  // 1. Age of arrived parts that still wait (warehouse receipt, never the report date).
-  const review: string[] = [], warn: string[] = [], near: string[] = [];
-  let reviewDue: string | null = null, warnDue: string | null = null, nearDue: string | null = null;
+  // 1. The 20-working-day deadline of every part that waits for its vehicle (never moved by a postponement).
+  const levels: Partial<Record<AidDeadlineLevel, { ids: string[]; due: string }>> = {};
   for (const i of open) {
-    if (!['arrived', 'reserved', 'not_installed'].includes(i.state)) continue;
-    const a = arrivalOf(i).at;
-    const age = arrivalAge(i, now);
-    if (!a || age == null) continue;
-    if (age >= SPECIAL_AID_RULES.reviewDays) { review.push(i.id); reviewDue ??= tehranDayStart(a, SPECIAL_AID_RULES.reviewDays).toISOString(); }
-    else if (age >= SPECIAL_AID_RULES.warnDays) { warn.push(i.id); warnDue ??= tehranDayStart(a, SPECIAL_AID_RULES.warnDays).toISOString(); }
-    else if (age >= SPECIAL_AID_RULES.warnDays - SPECIAL_AID_RULES.approachDays) {
-      near.push(i.id); nearDue ??= tehranDayStart(a, SPECIAL_AID_RULES.warnDays).toISOString();
-    }
+    const dl = aidDeadline(i, now, working);
+    if (!dl || dl.level === 'ok') continue;
+    const e = (levels[dl.level] ??= { ids: [], due: dl.endsAt });
+    e.ids.push(i.id);
+    if (dl.endsAt < e.due) e.due = dl.endsAt;
   }
-  if (review.length) add('age_review', reviewDue!, review, true);
-  if (warn.length) add('age_warning', warnDue!, warn);
-  if (near.length) add('age_approaching', nearDue!, near);
+  if (levels.expired) add('deadline_expired', levels.expired.due, levels.expired.ids, true);
+  if (levels.red) add('deadline_red', levels.red.due, levels.red.ids, true);
+  if (levels.yellow) add('deadline_yellow', levels.yellow.due, levels.yellow.ids);
 
-  // 2. Failed attempts on separate days.
-  const failed = failedAttemptDays(d.contacts);
-  const contactItems = open.map((i) => i.id);
-  if (failed >= SPECIAL_AID_RULES.failedAttemptsEscalation && contactItems.length) add('escalation', nowIso, contactItems, true);
-
-  // 3. Partially arrived related parts: the operator decides; no invitation is implied.
+  // 2. Partially arrived related parts: the operator decides; no invitation is implied.
   const undecided = [...new Set(open.filter((i) => waitingGroup(i) && groups.get(i.groupId!)?.decision == null).map((i) => i.groupId!))];
   if (undecided.length) add('group_decision', nowIso, open.filter((i) => undecided.includes(i.groupId!)).map((i) => i.id));
 
-  // 4. Arrived and not announced (a waiting group is announced only when complete or on a partial decision).
+  // 3. Arrived and not announced (a waiting group is announced only when complete or on a partial decision).
   const uninformed = open.filter((i) => !i.informedAt && !waitingGroup(i) && ['arrived', 'reserved'].includes(i.state));
-  const sortedContacts = [...d.contacts].sort((a, b) => a.at.localeCompare(b.at));
-  const last = sortedContacts.at(-1) ?? null;
   if (uninformed.length) {
-    const first = uninformed.map((i) => arrivalOf(i).at ?? nowIso).sort()[0]!;
-    const due = endOfNextWorkingDay(first, d.isWorkingDay).getTime();
-    // After a no-answer today the retry belongs to another day (attempts must be on separate days).
-    if (!(last && isUnreached(last.outcome) && tehranDay(last.at) === today)) {
-      if (last && isUnreached(last.outcome)) add('no_answer_retry', tehranDayStart(last.at, 1), uninformed.map((i) => i.id), true);
-      else add('inform_arrival', new Date(due), uninformed.map((i) => i.id), true);
-    }
+    const ids = uninformed.map((i) => i.id);
+    const since = uninformed.map((i) => arrivalOf(i).at ?? nowIso).sort()[0]!;
+    const after = sorted.filter((c) => c.at >= since);
+    const last = after.at(-1);
+    if (!last || !isUnreached(last.outcome)) add('inform_arrival', endOfNextWorkingDay(since, working), ids, true);
+    // A no-answer is tried again on another working day; after two unanswered calls the contact has failed
+    // (management is told) and only the ten-day call remains.
+    else if (unansweredStreak(after) < R.failedAfterUnanswered && tehranDay(last.at) < today) add('no_answer_retry', nextWorkingDayStart(last.at, working), ids, true);
   }
 
-  // 5. Promised visit date reached without a confirmed attendance.
-  const promise = [...sortedContacts].reverse().find((c) => c.promisedAt);
-  if (promise?.promisedAt && tehranDay(promise.promisedAt) <= today && !(d.attendedAt && d.attendedAt >= promise.at)) {
-    const ids = promise.itemIds.filter((id) => contactItems.includes(id));
-    if (ids.length || contactItems.length) add('promised_visit', tehranDayStart(promise.promisedAt), ids.length ? ids : contactItems);
+  // 4. Promised visit day reached without a confirmed attendance.
+  const openIds = open.map((i) => i.id);
+  const promise = [...sorted].reverse().find((c) => c.promisedAt);
+  if (promise?.promisedAt && openIds.length && tehranDay(promise.promisedAt) <= today && !(d.attendedAt && d.attendedAt >= promise.at)) {
+    const ids = promise.itemIds.filter((id) => openIds.includes(id));
+    add('promised_visit', tehranDayStart(promise.promisedAt), ids.length ? ids : openIds);
   }
 
-  // 6. Informed parts still waiting: a call every ten days; a no-answer is retried the next day.
-  const informed = open.filter((i) => i.informedAt && ['arrived', 'reserved', 'not_installed'].includes(i.state));
-  if (informed.length && !uninformed.length && last) {
-    if (isUnreached(last.outcome)) {
-      if (tehranDay(last.at) < today) add('no_answer_retry', tehranDayStart(last.at, 1), informed.map((i) => i.id));
+  // 5. A call every ten days from the registration of the request, before and after arrival (owner, 2026-11-28).
+  const calling = out.some((t) => t.kind === 'inform_arrival' || t.kind === 'no_answer_retry' || t.kind === 'promised_visit');
+  const start = live.map((i) => i.registeredAt ?? (isArrived(i.state) ? arrivalOf(i).at : null)).filter((x): x is string => !!x).sort()[0];
+  if (live.length && start && !calling) {
+    const ids = live.map((i) => i.id);
+    const since = sorted.filter((c) => c.at >= start);
+    const last = since.at(-1);
+    if (last && isUnreached(last.outcome) && unansweredStreak(since) < R.failedAfterUnanswered) {
+      if (tehranDay(last.at) < today) add('no_answer_retry', nextWorkingDayStart(last.at, working), ids);
     } else {
-      const due = tehranDayStart(last.at, SPECIAL_AID_RULES.recurringContactDays);
-      if (due.getTime() <= now.getTime()) add('recurring_contact', due, informed.map((i) => i.id));
+      const due = onWorkingDay(tehranDayStart(last?.at ?? start, R.recurringContactDays), working);
+      if (due.getTime() <= now.getTime()) add('recurring_contact', due, ids);
     }
   }
   return out.sort((a, b) => PRIORITY[a.kind] - PRIORITY[b.kind] || a.dueAt.localeCompare(b.dueAt));
@@ -344,18 +448,25 @@ export const SPECIAL_AID_QUEUE_LABELS: Record<SpecialAidQueue, string> = {
   appointed: 'نوبت‌داده‌شده',
   settled: 'تعیین تکلیف‌شده',
 };
+/** Earliest arrival of the parts that still wait for the vehicle (the day an invitation can start). */
+export function openArrivalSince(items: readonly AidItemFacts[]): string | null {
+  return items.filter((i) => !i.officialCancelled && isArrived(i.state) && !SPECIAL_AID_FINAL_STATES.includes(i.state)).map((i) => arrivalOf(i).at).filter((a): a is string => !!a).sort().at(0) ?? null;
+}
+
 /**
  * Queue of one vehicle. Open arrived parts decide between «آمادهٔ دعوت» and «نوبت‌داده‌شده» by the
- * latest contact since the earliest open arrival («نوبت هماهنگ شد» or «قول مراجعه»). Without open arrived
- * parts, a part still being supplied means «در انتظار تأمین»; every part installed or released is
- * «تعیین تکلیف‌شده». Cancelled official requests are left out; a vehicle without parts has no queue.
+ * latest contact since the earliest open arrival («نوبت هماهنگ شد» or «قول مراجعه») or by an appointment
+ * of the vehicle linked from the imported ISACO report (spec 29.3). Without open arrived parts, a part
+ * still being supplied means «در انتظار تأمین»; every part installed or released is «تعیین تکلیف‌شده».
+ * Cancelled official requests are left out; a vehicle without parts has no queue.
  */
-export function dossierQueue(items: readonly AidItemFacts[], contacts: readonly Pick<AidContactFacts, 'at' | 'outcome'>[]): SpecialAidQueue | null {
+export function dossierQueue(items: readonly AidItemFacts[], contacts: readonly Pick<AidContactFacts, 'at' | 'outcome'>[], opts: { linkedAppointment?: boolean } = {}): SpecialAidQueue | null {
   const live = items.filter((i) => !i.officialCancelled);
   if (!live.length) return null;
   const open = live.filter((i) => isArrived(i.state) && !SPECIAL_AID_FINAL_STATES.includes(i.state));
   if (open.length) {
-    const since = open.map((i) => arrivalOf(i).at).filter((a): a is string => !!a).sort().at(0) ?? null;
+    if (opts.linkedAppointment) return 'appointed';
+    const since = openArrivalSince(items);
     const latest = [...contacts].filter((c) => !since || c.at >= since).sort((a, b) => a.at.localeCompare(b.at)).at(-1);
     return latest && (latest.outcome === 'appointment_coordinated' || latest.outcome === 'promised_visit') ? 'appointed' : 'to_invite';
   }
@@ -365,7 +476,7 @@ export function dossierQueue(items: readonly AidItemFacts[], contacts: readonly 
 
 export const dossierSearchSchema = z.object({
   q: z.string().trim().max(80).optional(),
-  view: z.enum(['all', 'action', 'arrived', 'pending', 'review', 'awaiting_supply', 'to_invite', 'appointed', 'settled']).default('all'),
+  view: z.enum(['all', 'action', 'arrived', 'pending', 'review', 'awaiting_supply', 'to_invite', 'appointed', 'settled', 'yellow', 'red', 'expired', 'calls_overdue', 'contact_failed']).default('all'),
   page: z.number().int().min(1).max(10_000).default(1),
   pageSize: z.number().int().min(5).max(100).default(25),
 });
@@ -395,6 +506,7 @@ export interface SpecialAidItem {
   quantity: string | null;
   officialStatus: string;
   officialCategory: string;
+  /** Request date: official registration of the special-aid request («تاریخ ثبت امداد ویژه»). */
   officialRegisteredAt: string | null;
   receivedAt: string | null;
   arrivalObservedAt: string | null;
@@ -415,6 +527,8 @@ export interface SpecialAidItem {
   replacesItemId: string | null;
   replacedByItemId: string | null;
   accidentCaseNumber: string | null;
+  /** The 20-working-day deadline while the part waits for its vehicle (null otherwise). */
+  deadline: AidDeadline | null;
   version: number;
 }
 export interface SpecialAidContact { id: string; outcome: ContactOutcome; note: string | null; promisedAt: string | null; itemIds: string[]; byName: string; at: string }
@@ -437,6 +551,12 @@ export interface SpecialAidDossierRow {
   actionCount: number;
   urgent: boolean;
   nextTask: SpecialAidTask | null;
+  /** Colour of the dossier: the most urgent deadline of its waiting parts (null when none waits). */
+  deadline: AidDeadline | null;
+  /** «تماس ناموفق»: two unanswered calls in a row since the latest reached contact (spec 29.5). */
+  contactFailed: boolean;
+  /** Latest recorded call of the vehicle, any outcome. */
+  lastContactAt: string | null;
   version: number;
 }
 export interface SpecialAidDossier extends SpecialAidDossierRow {
@@ -448,12 +568,18 @@ export interface SpecialAidDossier extends SpecialAidDossierRow {
   postponedUntil: string | null;
   postponeReason: string | null;
   failedAttemptDays: number;
+  /** Unanswered calls in a row since the latest reached contact. */
+  unansweredStreak: number;
   appointments: SpecialAidAppointment[];
   appointmentState: AppointmentState;
   cards: SpecialAidCard[];
   feedback: SpecialAidFeedback[];
 }
-export interface SpecialAidTodayEntry { dossier: SpecialAidDossierRow; tasks: SpecialAidTask[] }
+/** A part whose deadline has ended and that may be released in one click (spec 29.2). */
+export interface SpecialAidReleasable { id: string; version: number; description: string | null; code: string | null; endsAt: string }
+export interface SpecialAidTodayEntry { dossier: SpecialAidDossierRow; tasks: SpecialAidTask[]; releasable: SpecialAidReleasable[] }
+/** Reason recorded with a one-click release at the end of the deadline. */
+export const DEADLINE_RELEASE_REASON = 'پایان مهلت ۲۰ روز کاری از رسیدن قطعه؛ آزاد برای مشتری دیگر';
 export interface SpecialAidSupplyRow {
   itemId: string; dossierId: string; vin: string; emdadNo: string | null; admissionNo: string | null;
   assessmentCode: string | null; procurementCode: string | null; description: string | null;
@@ -465,7 +591,13 @@ export interface SpecialAidSupplyRow {
   idleDays: number | null;
 }
 export interface SpecialAidSummary {
-  total: number; pending: number; overdue: number; arrivedUnused: number; reserved: number; released: number; installed: number;
+  total: number; pending: number; arrivedUnused: number; reserved: number; released: number; installed: number;
+  /** Dossiers by the colour of their most urgent waiting part (20 working days: yellow from 11, red from 18). */
+  deadline: { yellow: number; red: number; expired: number };
+  /** Dossiers with a call that was due before today and is still not made (ten-day call, retry, promised day, announcement). */
+  overdueCalls: number;
+  /** Dossiers whose last two calls were unanswered (spec 29.5). */
+  contactFailed: number;
   reasons: Record<NonConsumptionReason, number>;
   contactCompliance: { due: number; onTime: number };
   averageSupplyDays: number | null;
@@ -485,7 +617,7 @@ export interface SpecialAidFunnel {
   customers: {
     registered: number; arrived: number; informed: number; invited: number; attended: number; installed: number; releasedNoShow: number;
     /** Gaps the manager acts on. */
-    arrivedNotInformed: number; arrivedOver30NoVisit: number;
+    arrivedNotInformed: number; pastDeadlineNoVisit: number;
   };
   parts: { requested: number; pending: number; arrived: number; installed: number; releasedToOthers: number; arrivedOpen: number };
 }
@@ -502,8 +634,9 @@ export type ReplacementInput = z.infer<typeof replacementSchema>;
 
 /**
  * Appointments live in ISACO only; Manage reads the imported «لیست نوبت پذیرش» report and
- * never schedules. An appointment of the same VIN is not assumed to be for special aid:
- * the operator confirms «مرتبط» or «نامرتبط».
+ * never schedules. Spec 29.3: an appointment of the same vehicle is linked to the dossier
+ * automatically; the operator's own «مرتبط» / «نامرتبط» decision wins, and an uncertain match
+ * (several undecided appointments) is left for review instead of being guessed.
  */
 export const APPOINTMENT_STATES = ['confirmed', 'ambiguous', 'none_recent', 'stale', 'attended', 'passed_unverified', 'no_report'] as const;
 export type AppointmentState = (typeof APPOINTMENT_STATES)[number];
@@ -520,6 +653,20 @@ export const APPOINTMENT_STATE_LABELS: Record<AppointmentState, string> = {
 export const APPOINTMENT_STALE_DAYS = 3;
 export type AppointmentRelation = 'related' | 'unrelated';
 export interface AidAppointmentFacts { id: string; at: string | null; relation: AppointmentRelation | null }
+
+/**
+ * Appointments of the vehicle linked automatically (spec 29.3): exactly one undecided appointment on or
+ * after the earliest arrival of a part that still waits. Before any part arrived, or with several
+ * undecided candidates, nothing is linked automatically.
+ */
+export function autoLinkedAppointments(appointments: readonly AidAppointmentFacts[], since: string | null): Set<string> {
+  if (!since) return new Set();
+  const day = tehranDay(since);
+  const undecided = appointments.filter((a) => a.relation == null && a.at && tehranDay(a.at) >= day);
+  return new Set(undecided.length === 1 ? [undecided[0]!.id] : []);
+}
+/** The relation shown and counted: the operator's decision, otherwise the automatic link. */
+export const effectiveRelation = (a: AidAppointmentFacts, auto: ReadonlySet<string>): AppointmentRelation | null => a.relation ?? (auto.has(a.id) ? 'related' : null);
 
 /** Parses the file's appointment date (Jalali or ISO) and optional time; null when unreadable. */
 export function appointmentInstant(dateText: string | undefined, timeText?: string): string | null {
@@ -555,6 +702,8 @@ export interface SpecialAidAppointment {
   id: string; at: string | null; dateText: string | null; timeText: string | null;
   status: string | null; serviceType: string | null; admissionNo: string | null; appointmentNo: string | null;
   relation: AppointmentRelation | null; relationByName: string | null; fileName: string; importedAt: string;
+  /** Linked by Manage from the report (spec 29.3), not by a person; the operator can still correct it. */
+  auto: boolean;
 }
 
 // ------------------------------------------------------------------ admission card archive

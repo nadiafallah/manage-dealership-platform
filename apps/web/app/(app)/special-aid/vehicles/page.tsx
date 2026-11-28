@@ -14,6 +14,9 @@ const VIEWS: { key: DossierSearchInput['view']; label: string }[] = [
   { key: 'all', label: 'همه' }, { key: 'action', label: 'نیازمند اقدام' }, { key: 'arrived', label: 'دارای قطعهٔ رسیده' }, { key: 'pending', label: 'در حال تأمین' }, { key: 'review', label: 'نیازمند بررسی رزرو' },
   // The four work queues of the reconstruction scenario (owner 2026-11-25).
   ...SPECIAL_AID_QUEUES.map((k) => ({ key: k, label: SPECIAL_AID_QUEUE_LABELS[k] })),
+  // Deadline colours, overdue calls and failed contacts (owner 2026-11-28; links of the management report).
+  { key: 'yellow', label: 'زرد (روز کاری ۱۱+)' }, { key: 'red', label: 'قرمز (روز کاری ۱۸+)' }, { key: 'expired', label: 'پایان مهلت ۲۰ روز کاری' },
+  { key: 'calls_overdue', label: 'تماس عقب‌افتاده' }, { key: 'contact_failed', label: 'تماس ناموفق' },
 ];
 
 /** «پرونده خودروها»: one folder per VIN; search by VIN, plate, customer, special-aid or admission number, or code. */

@@ -5,7 +5,7 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import {
   CONTACT_OUTCOME_LABELS, NON_CONSUMPTION_LABELS, NON_CONSUMPTION_REASONS, SPECIAL_AID_ACTION_LABELS, SPECIAL_AID_ITEM_STATES, SPECIAL_AID_ITEM_STATE_LABELS,
-  arrivalAge, toPersianDigits, type NonConsumptionReason, type SpecialAidAction, type SpecialAidDossier, type SpecialAidItem, type SpecialAidItemState,
+  toPersianDigits, type NonConsumptionReason, type SpecialAidAction, type SpecialAidDossier, type SpecialAidItem, type SpecialAidItemState,
 } from '@manage/shared';
 import { api, errorMessage, fetcher } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -14,10 +14,15 @@ import { useToast } from '@/lib/toast';
 import { AppIcon } from '@/components/AppIcon';
 import { Dialog } from '@/components/Dialog';
 import { Plate } from '@/components/Plate';
-import { ContactDialog, ItemStateTag, PostponeDialog, SpecialAidTabs, VinText, dayText } from '@/components/SpecialAid';
+import { ContactDialog, DeadlineTag, ItemStateTag, PostponeDialog, ReleaseNowButton, SpecialAidTabs, VinText, dayText } from '@/components/SpecialAid';
 import { AppointmentStateTag, AppointmentsPanel, CardList, CardUpload, FeedbackForm, FeedbackList } from '@/components/SpecialAidRecords';
 
-/** One vehicle: every admission and special-aid part together, filterable; one call covers several parts. */
+/**
+ * One vehicle: every admission and special-aid part together, filterable; one call covers several parts.
+ * The dossier of «منتظر دعوت» (owner, 2026-11-28): short name with the full model one click away, the
+ * customer, each part with its state, request and arrival dates and its 20-working-day deadline, and the
+ * history of calls — for every vehicle of the dealership, accident or general repair.
+ */
 export default function SpecialAidDossierPage() {
   const { id } = useParams<{ id: string }>();
   const { can, me } = useAuth();
@@ -40,7 +45,6 @@ export default function SpecialAidDossierPage() {
   }
   const act = (i: SpecialAidItem, action: SpecialAidAction, extra: Record<string, unknown> = {}) => run(`/special-aid/items/${i.id}/action`, { action, expectedVersion: i.version, ...extra }, SPECIAL_AID_ACTION_LABELS[action]);
   const items = d.items.filter((i) => (!admission || i.admissionId === admission) && (!state || i.state === state));
-  const now = new Date();
   return (
     <div className="stack">
       <SpecialAidTabs />
@@ -52,7 +56,7 @@ export default function SpecialAidDossierPage() {
         </div>
         <div className="folder-row"><VinText vin={d.vin} /><span className="folder-id">پذیرش: {faNum(d.admissionCount)}</span></div>
         {d.vehicle.fullModel && d.vehicle.fullModel !== d.vehicle.model && <details className="vehicle-spec"><summary>مشخصات کامل خودرو</summary><p>{toPersianDigits(d.vehicle.fullModel)}</p></details>}
-        <div className="folder-counts"><AppointmentStateTag state={d.appointmentState} /><span className="cnt cnt-ok">رسیده {faNum(d.arrived)}</span><span className="cnt">در حال تأمین {faNum(d.pending)}</span>{d.failedAttemptDays > 0 && <span className="cnt cnt-warn">بی‌پاسخ در {faNum(d.failedAttemptDays)} روز</span>}{d.postponedUntil && <span className="cnt">پیگیری از {formatJalali(d.postponedUntil)} · {d.postponeReason}</span>}</div>
+        <div className="folder-counts"><AppointmentStateTag state={d.appointmentState} /><span className="cnt cnt-ok">رسیده {faNum(d.arrived)}</span><span className="cnt">در حال تأمین {faNum(d.pending)}</span><DeadlineTag deadline={d.deadline} />{d.contactFailed ? <span className="m-tag stop">تماس ناموفق: دو تماس بی‌پاسخ</span> : d.unansweredStreak > 0 && <span className="cnt cnt-warn">{faNum(d.unansweredStreak)} تماس بی‌پاسخ</span>}{d.postponedUntil && <span className="cnt">پیگیری از {formatJalali(d.postponedUntil)} · {d.postponeReason}</span>}</div>
         {operate && <div className="row no-print">
           <button type="button" className="btn btn-primary" onClick={() => setContact([])}><AppIcon name="send" />ثبت تماس</button>
           <button type="button" className="btn" onClick={() => setPostpone(true)}>تعویق پیگیری</button>
@@ -70,16 +74,16 @@ export default function SpecialAidDossierPage() {
           <label className="field">وضعیت<select className="input" value={state} onChange={(e) => setState(e.target.value as SpecialAidItemState | '')}><option value="">همه</option>{SPECIAL_AID_ITEM_STATES.map((s) => <option key={s} value={s}>{SPECIAL_AID_ITEM_STATE_LABELS[s]}</option>)}</select></label>
         </div></div>
         <div className="panel-body aid-items" data-testid="aid-items">{items.map((i) => {
-          const age = arrivalAge(i, now);
           const group = d.groups.find((g) => g.id === i.groupId);
           return <div key={i.id} className="aid-item" data-testid="aid-item">
             <div className="stack">
-              <div className="row">{operate && !i.accidentCaseId && !i.groupId && <input type="checkbox" aria-label="انتخاب برای گروه" checked={selected.includes(i.id)} onChange={(e) => setSelected(e.target.checked ? [...selected, i.id] : selected.filter((x) => x !== i.id))} />}<strong>{i.description ?? 'قطعه'}</strong><ItemStateTag item={i} />{group && <span className="m-tag em">گروه {group.label ?? ''}</span>}{age != null && i.state !== 'pending' && !['installed', 'released'].includes(i.state) && <span className={`m-tag ${age >= 30 ? 'stop' : age >= 20 ? 'wait' : 'mute'}`}>{faNum(age)} روز از رسید</span>}</div>
+              <div className="row">{operate && !i.accidentCaseId && !i.groupId && <input type="checkbox" aria-label="انتخاب برای گروه" checked={selected.includes(i.id)} onChange={(e) => setSelected(e.target.checked ? [...selected, i.id] : selected.filter((x) => x !== i.id))} />}<strong>{i.description ?? 'قطعه'}</strong><ItemStateTag item={i} />{group && <span className="m-tag em">گروه {group.label ?? ''}</span>}<DeadlineTag deadline={i.deadline} /></div>
               <div className="aid-item-meta">
                 <span>کد تدارکاتی: <bdi>{toPersianDigits(i.procurementCode ?? '—')}</bdi></span><span>کد اختصاصی: <bdi>{toPersianDigits(i.assessmentCode ?? '—')}</bdi></span>
                 <span>امداد ویژه: <bdi>{toPersianDigits(i.emdadNo ?? '—')}</bdi></span><span>پذیرش: <bdi>{toPersianDigits(i.admissionNo ?? '—')}</bdi></span><span>تعداد: {toPersianDigits(i.quantity ?? '—')}</span>
               </div>
               <div className="aid-item-meta"><span>وضعیت رسمی: {i.officialStatus || '—'}</span>
+                <span>درخواست (ثبت رسمی امداد): {dayText(i.officialRegisteredAt)}</span>
                 {i.receivedAt ? <span>رسید انبار (رسمی): {dayText(i.receivedAt)}</span> : i.arrivalObservedAt ? <span>نخستین مشاهدهٔ رسید در منیج: {dayText(i.arrivalObservedAt)}</span> : null}
                 {i.informedAt ? <span>اطلاع به مشتری: {dayText(i.informedAt)}</span> : i.state !== 'pending' && <span className="m-tag wait">مشتری خبر ندارد</span>}
               </div>
@@ -92,7 +96,10 @@ export default function SpecialAidDossierPage() {
               {operate && !i.accidentCaseId && i.state !== 'installed' && <NonConsumption item={i} busy={busy} onSave={(reason, note, station) => run(`/special-aid/items/${i.id}/non-consumption`, { reason, note, ...(station ? { requestingStation: station } : {}), expectedVersion: i.version }, 'علت ثبت شد؛ رزرو تغییری نکرد')} />}
             </div>
             <div className="aid-item-actions no-print">{i.allowedActions.filter((a) => a !== 'release' ? operate : can('special_aid.release')).map((a) => (
-              <button key={a} type="button" className={`btn btn-sm${a === 'release' ? ' btn-ghost' : ''}`} disabled={busy} onClick={() => { if (a === 'release') { setRelease(i); setReleaseReason(''); } else void act(i, a); }}>{SPECIAL_AID_ACTION_LABELS[a]}</button>
+              // At the end of the 20-working-day deadline the release is one click (spec 29.2); before it, a reason is asked for.
+              a === 'release' && i.deadline?.level === 'expired'
+                ? <ReleaseNowButton key={a} part={{ id: i.id, version: i.version, description: i.description, code: i.procurementCode }} onDone={(next) => { if (next) saved(next); else void mutate(); }} />
+                : <button key={a} type="button" className={`btn btn-sm${a === 'release' ? ' btn-ghost' : ''}`} disabled={busy} onClick={() => { if (a === 'release') { setRelease(i); setReleaseReason(''); } else void act(i, a); }}>{SPECIAL_AID_ACTION_LABELS[a]}</button>
             ))}{operate && i.state !== 'pending' && !['installed', 'released'].includes(i.state) && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setContact([i.id])}>تماس برای همین قطعه</button>}</div>
           </div>;
         })}{!items.length && <p className="m-empty">قطعه‌ای با این صافی نیست.</p>}</div>
