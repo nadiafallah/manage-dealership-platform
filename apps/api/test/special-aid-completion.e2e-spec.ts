@@ -162,6 +162,8 @@ it('appointments: imported from the ISACO list, linked automatically (spec 29.3)
   expect(d.appointments[0]).toMatchObject({ appointmentNo: 'N-5001', relation: 'related', auto: true, timeText: '10:30' });
   expect(d.appointmentState).toBe('confirmed');
   expect((await operator.post('/special-aid/dossiers/search', { view: 'appointed', pageSize: 100 })).body.items.some((r: SpecialAidDossierRow) => r.id === d.id)).toBe(true);
+  // A linked appointment counts the customer as invited in the management funnel.
+  expect((await manager.get('/special-aid/summary')).body.funnel.customers.invited).toBeGreaterThanOrEqual(1);
   // The operator's decision wins over the automatic link, in both directions.
   const unrel = await operator.post(`/special-aid/dossiers/${d.id}/appointments/${d.appointments[0]!.id}`, { relation: 'unrelated' });
   expect(unrel.status).toBe(201);

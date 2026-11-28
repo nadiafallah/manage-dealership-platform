@@ -733,7 +733,8 @@ export class SpecialAidService {
       c.registered += 1;
       if (items.some(arrivedState)) c.arrived += 1;
       if (items.some((i) => i.informedAt) || contacts.some((x) => !isUnreached(x.outcome))) c.informed += 1;
-      if (contacts.some((x) => x.outcome === 'appointment_coordinated' || x.outcome === 'promised_visit')) c.invited += 1;
+      // Invited: a coordinated appointment or promise in a call, or an ISACO appointment linked to the vehicle (spec 29.3).
+      if (l.linkedAppointment || contacts.some((x) => x.outcome === 'appointment_coordinated' || x.outcome === 'promised_visit')) c.invited += 1;
       if (attended) c.attended += 1;
       if (installed) c.installed += 1;
       if (!attended && items.some((i) => i.state === 'released')) c.releasedNoShow += 1;
