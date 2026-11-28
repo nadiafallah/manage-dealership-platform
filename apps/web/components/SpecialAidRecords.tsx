@@ -13,12 +13,15 @@ import { useToast } from '@/lib/toast';
 const STATE_TONE: Record<AppointmentState, string> = { confirmed: 'ok', attended: 'ok', ambiguous: 'wait', passed_unverified: 'stop', stale: 'wait', none_recent: 'mute', no_report: 'mute' };
 export const AppointmentStateTag = ({ state }: { state: AppointmentState }) => <span className={`m-tag ${STATE_TONE[state]}`}>{APPOINTMENT_STATE_LABELS[state]}</span>;
 
-/** Appointments of this VIN from the imported ISACO list; Manage never schedules. */
+/**
+ * Appointments of this VIN from the imported ISACO list; Manage never schedules. Spec 29.3: the
+ * appointment of the vehicle after a part arrived is linked automatically; the operator can correct it.
+ */
 export function AppointmentsPanel({ d, busy, onRelation }: { d: SpecialAidDossier; busy: boolean; onRelation: (entryId: string, relation: 'related' | 'unrelated' | null) => void }) {
   const { can } = useAuth();
   const operate = can('special_aid.operate');
   return (
-    <section className="panel" aria-labelledby="aid-appointments"><div className="panel-head"><div><h2 id="aid-appointments">نوبت‌های ایساکو</h2><p className="muted small">از «لیست نوبت پذیرش»؛ نوبت در ایساکو داده و جابه‌جا می‌شود، نه در منیج.</p></div><AppointmentStateTag state={d.appointmentState} /></div>
+    <section className="panel" aria-labelledby="aid-appointments"><div className="panel-head"><div><h2 id="aid-appointments">نوبت‌های ایساکو</h2><p className="muted small">از «لیست نوبت پذیرش»؛ نوبت در سامانهٔ نوبت‌دهی کسب‌وکار داده و جابه‌جا می‌شود، نه در منیج. نوبت همین خودرو پس از رسیدن قطعه خودکار وصل می‌شود؛ اگر اشتباه است «نامرتبط» بزنید.</p></div><AppointmentStateTag state={d.appointmentState} /></div>
       <div className="panel-body">
         {d.appointments.length ? <div className="table-scroll"><table className="table static"><thead><tr><th>روز و ساعت</th><th>وضعیت در ایساکو</th><th>شماره نوبت / پذیرش</th><th>مرتبط با امداد ویژه؟</th></tr></thead><tbody>
           {d.appointments.map((a) => <tr key={a.id}>
@@ -28,7 +31,7 @@ export function AppointmentsPanel({ d, busy, onRelation }: { d: SpecialAidDossie
             <td>{operate ? <div className="segmented" role="group" aria-label="ارتباط نوبت">
               <button type="button" aria-pressed={a.relation === 'related'} disabled={busy} onClick={() => onRelation(a.id, a.relation === 'related' ? null : 'related')}>مرتبط</button>
               <button type="button" aria-pressed={a.relation === 'unrelated'} disabled={busy} onClick={() => onRelation(a.id, a.relation === 'unrelated' ? null : 'unrelated')}>نامرتبط</button>
-            </div> : a.relation === 'related' ? 'مرتبط' : a.relation === 'unrelated' ? 'نامرتبط' : 'تأیید نشده'}{a.relationByName && <div className="xs muted">{a.relationByName}</div>}</td>
+            </div> : a.relation === 'related' ? 'مرتبط' : a.relation === 'unrelated' ? 'نامرتبط' : 'تأیید نشده'}{a.auto ? <div className="xs muted">خودکار از گزارش نوبت</div> : a.relationByName && <div className="xs muted">{a.relationByName}</div>}</td>
           </tr>)}
         </tbody></table></div> : <p className="muted small">{APPOINTMENT_STATE_LABELS[d.appointmentState]}.</p>}
       </div>
