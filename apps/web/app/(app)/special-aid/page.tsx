@@ -82,8 +82,13 @@ function TodayRow({ entry, tasks, section, onChanged }: { entry: SpecialAidToday
         <span>{d.vehicle.customerName ?? 'مشتری در سوابق پذیرش نیست'}</span>
       </div>
       <div className="rcp-status">
-        {tasks.map((t) => <div key={t.kind} className="small">{t.urgent ? <span className="m-tag stop">فوری</span> : t.overdue ? <span className="m-tag wait">گذشته</span> : null} {t.label}</div>)}
-        {section === 'deadline' ? <DeadlineTag deadline={d.deadline} /> : d.contactFailed && <span className="m-tag stop">تماس ناموفق</span>}
+        {section === 'deadline' ? <>
+          <DeadlineTag deadline={d.deadline} />
+          {d.deadline?.level === 'expired' && <div className="xs muted">با یک کلیک برای مشتری دیگر آزاد کنید یا در پرونده تعیین تکلیف کنید.</div>}
+        </> : <>
+          {tasks.map((t) => <div key={t.kind} className="small">{t.urgent ? <span className="m-tag stop">فوری</span> : t.overdue ? <span className="m-tag wait">گذشته</span> : null} {t.label}</div>)}
+          {d.contactFailed && <span className="m-tag stop">تماس ناموفق</span>}
+        </>}
       </div>
       <div className="rcp-meta">
         <span><AppIcon name="calendar" />{section === 'deadline' && d.deadline ? `پایان مهلت ${formatJalali(d.deadline.endsAt)}` : `سررسید ${formatJalali(first.dueAt)}`}</span>

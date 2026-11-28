@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { formatJalaliDateInput, formatTimeInput, isWorkingDay, type WorkCalendar } from '@manage/shared';
 import { login } from './helpers';
+import { writeSheet } from '../../api/src/parts/xlsx';
 test.use({ actionTimeout: 15000 });
 
 // Special-aid mission of 2026-11-28 in the browser: «کارهای امروز» in three parts (due calls, newly
@@ -44,6 +45,18 @@ test('special-aid desk: three parts of today, one-click call and release, dossie
   expect(cal.status()).toBe(200);
   const calendar = (await cal.json()).current.calendar as WorkCalendar;
   working = (k: string) => isWorkingDay(k, calendar);
+  // Synthetic reception records: customer, plate and full ISACO model of each vehicle (phones 0900…).
+  const customers = [
+    ['VIN', 'نام مشتری', 'تلفن همراه', 'پلاک', 'مدل خودرو', 'شرح تیپ'],
+    [VIN.yellow, 'مشتری ساختگی زرد', '09000000012', '12 ب 345 - 67', 'دنا پلاس اتوماتیک توربو', 'تیپ ساختگی ۱'],
+    [VIN.red, 'مشتری ساختگی قرمز', '09000000019', '23 ج 456 - 78', 'سورن پلاس XU7P', 'تیپ ساختگی ۲'],
+    [VIN.expired, 'مشتری ساختگی پایان مهلت', '09000000025', '34 د 567 - 89', 'پژو 207i دنده ای', 'تیپ ساختگی ۳'],
+    [VIN.fresh, 'مشتری ساختگی تازه', '09000000001', '45 س 678 - 11', 'تارا V4 LX', 'تیپ ساختگی ۴'],
+    [VIN.call, 'مشتری ساختگی تماس', '09000000112', '56 ص 789 - 22', 'رانا پلاس پانوراما', 'تیپ ساختگی ۵'],
+  ];
+  const imported = await page.request.post('/api/v1/reference-imports', { headers, data: { kind: 'customers', fileName: 'synthetic-customers.xlsx', fileBase64: Buffer.from(writeSheet('سوابق', customers)).toString('base64'), sheetIndex: 0, headerRow: 1, mapping: { vin: 0, fullName: 1, phone: 2, plate: 3, model: 4, trim: 5 } } });
+  expect(imported.status(), await imported.text()).toBe(201);
+  expect((await page.request.post(`/api/v1/reference-imports/${(await imported.json()).id}/apply`, { headers, data: {} })).status()).toBe(201);
   const arrived = (adm: string, vin: string, no: string, code: string, day: number, name: string) => [adm, vin, no, code, code, 'وارد موجودی شده است', arrivalOnDay(day), '1', name, daysAgo(60)];
   await publish(page.request, [
     arrived('9981012', VIN.yellow, '0081012', '00818181', 12, 'چراغ جلو ساختگی'),
@@ -64,6 +77,13 @@ test('special-aid desk: three parts of today, one-click call and release, dossie
   await expect(rowOf(deadline, VIN.red).locator('[data-deadline="red"]')).toContainText('قرمز');
   await expect(rowOf(deadline, VIN.expired).locator('[data-deadline="expired"]')).toBeVisible();
   await expect(rowOf(deadline, VIN.fresh)).toHaveCount(0);
+  // Lists show the short name, the customer and the plate at list size; the full model opens with one click.
+  const yellow = rowOf(deadline, VIN.yellow);
+  await expect(yellow.locator('.folder-car')).toHaveText('دنا پلاس');
+  await expect(yellow).toContainText('مشتری ساختگی زرد');
+  await expect(yellow.getByRole('img', { name: /پلاک/ })).toBeVisible();
+  await yellow.getByText('مدل کامل').click();
+  await expect(yellow).toContainText('دنا پلاس اتوماتیک توربو تیپ ساختگی ۱');
   await page.screenshot({ path: `${SHOTS}/08-desk-1440.png`, fullPage: true });
 
   // One click records the call; the ten-day call moves on and the row leaves «تماس‌های سررسیده».
