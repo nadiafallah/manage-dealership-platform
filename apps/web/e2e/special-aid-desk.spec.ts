@@ -8,7 +8,7 @@ test.use({ actionTimeout: 15000 });
 // arrived parts to invite, yellow/red dossiers), one-click call and release, the complete dossier and
 // the management report. Screenshots go to the «special-aid-screenshots» CI artifact. Synthetic data only.
 const headers = { 'x-manage-client': 'e2e' };
-const FIELDS = ['شماره کارت پذيرش', 'شماره شاسی', 'شماره امداد ویژه', 'کد اختصاصی اولیه', 'کد قطعه', 'وضعیت امداد ویژه', 'تاريخ رسيد شدن امداد ويژه در انبار', 'تعداد اختصاصي', 'شرح قطعه اختصاصي', 'تاریخ ثبت امداد ویژه'];
+const FIELDS = ['شماره کارت پذيرش', 'شماره شاسی', 'شماره امداد ویژه', 'کد اختصاصی اولیه', 'کد قطعه', 'وضعیت امداد ویژه', 'تاريخ رسيد شدن امداد ويژه در انبار', 'تعداد اختصاصي', 'شرح اختصاصی', 'تاریخ ثبت امداد ویژه', 'كد تداركاتي كالا'];
 const SHOTS = 'test-results/special-aid-screenshots';
 const VIN = { yellow: 'TESTVIN0000DKY012', red: 'TESTVIN0000DKR019', expired: 'TESTVIN0000DKX025', fresh: 'TESTVIN0000DKF000', call: 'TESTVIN0000DKC012' };
 
@@ -57,13 +57,13 @@ test('special-aid desk: three parts of today, one-click call and release, dossie
   const imported = await page.request.post('/api/v1/reference-imports', { headers, data: { kind: 'customers', fileName: 'synthetic-customers.xlsx', fileBase64: Buffer.from(writeSheet('سوابق', customers)).toString('base64'), sheetIndex: 0, headerRow: 1, mapping: { vin: 0, fullName: 1, phone: 2, plate: 3, model: 4, trim: 5 } } });
   expect(imported.status(), await imported.text()).toBe(201);
   expect((await page.request.post(`/api/v1/reference-imports/${(await imported.json()).id}/apply`, { headers, data: {} })).status()).toBe(201);
-  const arrived = (adm: string, vin: string, no: string, code: string, day: number, name: string) => [adm, vin, no, code, code, 'وارد موجودی شده است', arrivalOnDay(day), '1', name, daysAgo(60)];
+  const arrived = (adm: string, vin: string, no: string, code: string, day: number, name: string) => [adm, vin, no, code, code, 'وارد موجودی شده است', arrivalOnDay(day), '1', name, daysAgo(60), `${code}01`];
   await publish(page.request, [
     arrived('9981012', VIN.yellow, '0081012', '00818181', 12, 'چراغ جلو ساختگی'),
     arrived('9981019', VIN.red, '0081019', '00828282', 19, 'سپر عقب ساختگی'),
     arrived('9981025', VIN.expired, '0081025', '00838383', 25, 'آینه ساختگی'),
     arrived('9981000', VIN.fresh, '0081000', '00848484', 0, 'گلگیر ساختگی'),
-    ['9981112', VIN.call, '0081112', '00858585', '00858585', 'در مرحله خرید', '', '1', 'درب ساختگی', daysAgo(12)],
+    ['9981112', VIN.call, '0081112', '00858585', '00858585', 'در مرحله خرید', '', '1', 'درب ساختگی', daysAgo(12), '0085858501'],
   ]);
 
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -84,6 +84,7 @@ test('special-aid desk: three parts of today, one-click call and release, dossie
   await expect(yellow.getByRole('img', { name: /پلاک/ })).toBeVisible();
   await yellow.getByText('مدل کامل').click();
   await expect(yellow).toContainText('دنا پلاس اتوماتیک توربو تیپ ساختگی ۱');
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: `${SHOTS}/08-desk-1440.png`, fullPage: true });
 
   // One click records the call; the ten-day call moves on and the row leaves «تماس‌های سررسیده».
@@ -96,6 +97,7 @@ test('special-aid desk: three parts of today, one-click call and release, dossie
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/special-aid');
   await expect(rowOf(page.getByTestId('aid-today-deadline'), VIN.red)).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: `${SHOTS}/09-desk-390.png`, fullPage: true });
 
   // The dossier: request and arrival dates, the deadline of each part, the call history.
@@ -104,10 +106,12 @@ test('special-aid desk: three parts of today, one-click call and release, dossie
   await page.waitForURL(/\/special-aid\/vehicles\/[0-9a-f-]+$/);
   const item = page.getByTestId('aid-items').getByTestId('aid-item');
   await expect(item).toHaveCount(1);
+  await expect(item).toContainText('چراغ جلو ساختگی');
   await expect(item).toContainText('درخواست (ثبت رسمی امداد)');
   await expect(item).toContainText('رسید انبار (رسمی)');
   await expect(item.locator('[data-deadline="yellow"]')).toContainText('روز کاری ۱۲ از ۲۰');
   await expect(page.getByRole('heading', { name: 'تماس‌ها' })).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: `${SHOTS}/10-dossier-deadline.png`, fullPage: true });
 
   // The management report: funnels, yellow and red dossiers, expired deadlines and overdue calls.
@@ -117,6 +121,7 @@ test('special-aid desk: three parts of today, one-click call and release, dossie
   await expect(followUp.getByRole('link', { name: /پرونده‌های قرمز/ })).toBeVisible();
   await expect(followUp.getByRole('link', { name: /تماس‌های عقب‌افتاده/ })).toBeVisible();
   await expect(page.getByRole('region', { name: 'قیف امداد ویژه' })).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: `${SHOTS}/11-report-1440.png`, fullPage: true });
   await followUp.getByRole('link', { name: /پرونده‌های قرمز/ }).click();
   await page.waitForURL(/\/special-aid\/vehicles\?view=red$/);
