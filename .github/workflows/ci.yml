@@ -170,6 +170,13 @@ jobs:
           path: apps/web/test-results-pulse/pulse-screenshots
           if-no-files-found: ignore
           retention-days: 14
+      # Temporary, this PR only: its screenshots in the job log (base64) for the PR description.
+      - if: always() && github.head_ref == 'feature/special-aid'
+        run: |
+          for f in apps/web/test-results/special-aid-screenshots/08-desk-1440.png apps/web/test-results/special-aid-screenshots/09-desk-390.png apps/web/test-results/special-aid-screenshots/10-dossier-deadline.png apps/web/test-results/special-aid-screenshots/11-report-1440.png; do
+            [ -f "$f" ] || continue
+            echo "SHOT-BEGIN $(basename "$f")"; base64 -w0 "$f"; echo; echo "SHOT-END"
+          done
       - if: always()
         uses: actions/upload-artifact@v4
         with:
