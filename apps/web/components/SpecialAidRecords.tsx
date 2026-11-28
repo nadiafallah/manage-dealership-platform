@@ -29,7 +29,7 @@ export function AppointmentsPanel({ d, busy, onRelation }: { d: SpecialAidDossie
             <td>{a.status ?? '—'}{a.serviceType && <div className="xs muted">{a.serviceType}</div>}</td>
             <td><bdi>{toPersianDigits(a.appointmentNo ?? '—')}</bdi>{a.admissionNo && <div className="xs muted">پذیرش <bdi>{toPersianDigits(a.admissionNo)}</bdi></div>}</td>
             <td>{operate ? <div className="segmented" role="group" aria-label="ارتباط نوبت">
-              <button type="button" aria-pressed={a.relation === 'related'} disabled={busy} onClick={() => onRelation(a.id, a.relation === 'related' ? null : 'related')}>مرتبط</button>
+              <button type="button" aria-pressed={a.relation === 'related'} disabled={busy} onClick={() => onRelation(a.id, a.relation === 'related' && !a.auto ? null : 'related')}>مرتبط</button>
               <button type="button" aria-pressed={a.relation === 'unrelated'} disabled={busy} onClick={() => onRelation(a.id, a.relation === 'unrelated' ? null : 'unrelated')}>نامرتبط</button>
             </div> : a.relation === 'related' ? 'مرتبط' : a.relation === 'unrelated' ? 'نامرتبط' : 'تأیید نشده'}{a.auto ? <div className="xs muted">خودکار از گزارش نوبت</div> : a.relationByName && <div className="xs muted">{a.relationByName}</div>}</td>
           </tr>)}
